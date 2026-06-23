@@ -9,6 +9,7 @@ import { useCurrency } from '@/components/CurrencyContext';
 
 interface VisaInfo {
   country_name: string;
+  country_currency?: string;
   requirements: string;
   documents_required: string[];
   timeline: string;

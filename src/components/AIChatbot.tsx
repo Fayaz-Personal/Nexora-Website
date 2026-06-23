@@ -63,6 +63,8 @@ interface NexaProfile {
   achievements: Achievement[];
   missions: Mission[];
   eligibility_score: number;
+  ep?: number;
+  passport_stamps?: string[];
 }
 
 interface ReadinessData {
@@ -1090,7 +1092,7 @@ export default function AIChatbot() {
         });
 
         // Adjust recommendations list
-        const remainingActions = [];
+        const remainingActions: string[] = [];
         if (!isLanguageCompleted) remainingActions.push('Complete IELTS section to unlock scholarship recommendations.');
         if (!isBookmarked) remainingActions.push('Bookmark a university to track application requirements.');
         if (!isLoanExplored) remainingActions.push('Compare banking partners in the Education Loan Portal.');

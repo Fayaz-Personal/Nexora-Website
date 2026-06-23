@@ -1062,6 +1062,13 @@ export async function earnPassportStamp(profileId: number, countryName: string) 
       stamps = [];
     }
 
+    let achievements = profile.achievements || [];
+    if (typeof achievements === 'string') {
+      achievements = JSON.parse(achievements);
+    } else if (!Array.isArray(achievements)) {
+      achievements = [];
+    }
+
     // Check if already stamped
     if (stamps.includes(countryName)) {
       return { success: true, alreadyEarned: true };

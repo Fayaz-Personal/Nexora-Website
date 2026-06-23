@@ -10,6 +10,7 @@ import { useCurrency } from '@/components/CurrencyContext';
 interface Accommodation {
   id: number;
   country_name: string;
+  country_currency?: string;
   city_name: string;
   type: 'hostels' | 'student housing' | 'PGs' | 'apartments' | 'shared rooms';
   rent: string;
