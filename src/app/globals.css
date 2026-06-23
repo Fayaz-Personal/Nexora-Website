@@ -1,26 +1,132 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
+@theme {
+  --color-teal-dark: var(--teal-dark);
+  --color-teal-bright: var(--teal-bright);
+  --color-teal-green: var(--teal-green);
+  --color-yellow-green: var(--yellow-green);
+  --color-orange-light: var(--orange-light);
+  --color-primary: var(--primary);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --teal-dark: #0d9488;
+  --teal-bright: #06b6d4;
+  --teal-green: #10b981;
+  --yellow-green: #84cc16;
+  --orange-light: #f97316;
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --surface: rgba(255, 255, 255, 0.8);
+  --surface-border: rgba(13, 148, 136, 0.15);
+  --primary: #0d9488;
+  --primary-glow: rgba(13, 148, 136, 0.05);
+  --secondary: #06b6d4;
+  --mint: #10b981;
+  --lime: #84cc16;
+  --orange: #f97316;
+  --background-rgb: 255, 255, 255;
+  --foreground-rgb: 15, 23, 42;
+}
+
+html {
+  font-size: 17.5px;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", Oxygen, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(13, 148, 136, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 148, 136, 0.5);
+}
+
+/* Custom Utilities */
+.glass-card {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  backdrop-filter: blur(16px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+}
+
+.glass-card-hover:hover {
+  border-color: rgba(20, 184, 166, 0.4);
+  transform: translateY(-4px);
+  box-shadow: 0 0 25px rgba(20, 184, 166, 0.25);
+}
+
+.glass-input {
+  color: var(--foreground);
+  background: rgba(2, 11, 13, 0.7);
+  border: 1px solid rgba(20, 184, 166, 0.25);
+  border-radius: 12px;
+  outline: none;
+  padding: 10px 16px;
+  transition: all 0.2s;
+}
+
+.glass-input:focus {
+  border-color: #14b8a6;
+  box-shadow: 0 0 15px rgba(20, 184, 166, 0.2);
+}
+
+.bg-gradient-teal-sunrise {
+  background: linear-gradient(135deg, #0d9488 0%, #14b8a6 50%, #10b981 100%);
+}
+
+.text-gradient-teal-sunrise {
+  background: linear-gradient(135deg, #0d9488 0%, #10b981 100%);
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+  display: inline-block;
+}
+
+.glow-btn {
+  color: #fff;
+  background: linear-gradient(135deg, #0d9488, #14b8a6);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 15px rgba(20, 184, 166, 0.25);
+}
+
+.glow-btn:hover {
+  background: linear-gradient(135deg, #14b8a6, #10b981);
+  transform: translateY(-2px);
+  box-shadow: 0 0 25px rgba(20, 184, 166, 0.45);
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.animate-float {
+  animation: 6s ease-in-out infinite float;
 }
