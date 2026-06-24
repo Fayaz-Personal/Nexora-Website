@@ -60,7 +60,7 @@ export default function StudentDashboard() {
   const [name, setName] = useState('');
   const [degree, setDegree] = useState('MS');
   const [department, setDepartment] = useState('Computer Science');
-  const [cgpa, setCgpa] = useState(3.0);
+  const [cgpa, setCgpa] = useState<string | number>('3.0');
   const [budget, setBudget] = useState(30000);
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
@@ -95,7 +95,7 @@ export default function StudentDashboard() {
         setName(studProfile.name || '');
         setDegree(studProfile.degree || 'MS');
         setDepartment(studProfile.department || 'Computer Science');
-        setCgpa(Number(studProfile.cgpa) || 3.0);
+        setCgpa(studProfile.cgpa !== null && studProfile.cgpa !== undefined ? String(studProfile.cgpa) : '3.0');
         setBudget(Number(studProfile.budget) || 30000);
         setLinkedinUrl(studProfile.linkedin_url || '');
         setGithubUrl(studProfile.github_url || '');
@@ -192,7 +192,7 @@ export default function StudentDashboard() {
       name,
       degree,
       department,
-      cgpa,
+      cgpa: Number(cgpa) || 3.0,
       budget,
       linkedinUrl,
       githubUrl,
@@ -1319,7 +1319,7 @@ export default function StudentDashboard() {
                     min="1.00"
                     max="10.00"
                     value={cgpa}
-                    onChange={(e) => setCgpa(Number(e.target.value))}
+                    onChange={(e) => setCgpa(e.target.value)}
                     className="w-full bg-white border border-slate-200 rounded-lg text-slate-800 p-2.5 text-xs focus:outline-none focus:border-teal-dark/50 focus:ring-1 focus:ring-teal-dark shadow-sm"
                     required
                   />

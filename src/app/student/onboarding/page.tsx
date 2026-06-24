@@ -34,7 +34,7 @@ export default function OnboardingPage() {
     department: 'Computer Science',
     college: '',
     universityName: '',
-    cgpa: 3.0,
+    cgpa: '3.0' as any,
     graduationYear: 2026,
 
     // Step 3: Preferences
@@ -67,7 +67,7 @@ export default function OnboardingPage() {
           ...prev,
           name: studProfile.name || sessionUser.name || '',
           email: sessionUser.email || '',
-          cgpa: Number(studProfile.cgpa) || 3.0,
+          cgpa: studProfile.cgpa !== null && studProfile.cgpa !== undefined ? String(studProfile.cgpa) : '3.0',
           preferredDegree: studProfile.degree || 'MS',
           department: studProfile.department || 'Computer Science',
           linkedinUrl: studProfile.linkedin_url || '',
@@ -119,7 +119,7 @@ export default function OnboardingPage() {
         formData.department.trim() !== '' &&
         formData.college.trim() !== '' &&
         formData.universityName.trim() !== '' &&
-        formData.cgpa > 0 &&
+        Number(formData.cgpa) > 0 &&
         formData.graduationYear > 0
       );
     }
@@ -430,7 +430,7 @@ export default function OnboardingPage() {
                     min="1"
                     max="10"
                     value={formData.cgpa}
-                    onChange={(e) => setFormData({ ...formData, cgpa: Number(e.target.value) })}
+                    onChange={(e) => setFormData({ ...formData, cgpa: e.target.value })}
                     className="w-full bg-white border border-slate-200 rounded-xl text-sm text-slate-800 p-3.5 focus:outline-none focus:border-teal-dark focus:ring-1 focus:ring-teal-dark transition-all"
                     required
                   />
