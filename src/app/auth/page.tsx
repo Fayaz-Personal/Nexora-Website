@@ -16,7 +16,7 @@ export default function AuthPage() {
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const [role, setRole] = useState<'student' | 'uni_admin' | 'platform_admin'>('student');
+  const [role, setRole] = useState<'student' | 'uni_admin' | 'platform_admin' | 'business'>('student');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [recoveryStep, setRecoveryStep] = useState<1 | 2>(1);
@@ -47,7 +47,13 @@ export default function AuthPage() {
           setIsGoogleLoading(false);
           if (res.success) {
             router.refresh();
-            if (res.isNewUser || !res.onboardingCompleted) {
+            if (res.role === 'business') {
+              router.push('/business/dashboard');
+            } else if (res.role === 'platform_admin') {
+              router.push('/platform-admin/dashboard');
+            } else if (res.role === 'uni_admin') {
+              router.push('/uni-admin/dashboard');
+            } else if (res.isNewUser || !res.onboardingCompleted) {
               router.push('/student/onboarding');
             } else {
               router.push('/student/dashboard');
@@ -92,6 +98,8 @@ export default function AuthPage() {
           router.push('/platform-admin/dashboard');
         } else if (res.role === 'uni_admin') {
           router.push('/uni-admin/dashboard');
+        } else if (res.role === 'business') {
+          router.push('/business/dashboard');
         } else {
           if (!res.onboardingCompleted) {
             router.push('/student/onboarding');
@@ -352,19 +360,19 @@ export default function AuthPage() {
                 <label className="block text-sm font-bold text-slate-600 uppercase tracking-wider mb-2 text-center">
                   Register As
                 </label>
-                <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  {(['student', 'uni_admin', 'platform_admin'] as const).map((r) => (
+                <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  {(['student', 'uni_admin', 'platform_admin', 'business'] as const).map((r) => (
                     <button
                       key={r}
                       type="button"
                       onClick={() => setRole(r)}
-                      className={`py-2 px-1 text-sm font-bold rounded-lg transition-all capitalize cursor-pointer ${
+                      className={`py-2 px-0.5 text-xs font-bold rounded-lg transition-all capitalize cursor-pointer ${
                         role === r
                           ? 'bg-teal-dark text-white shadow-sm font-extrabold'
                           : 'text-slate-655 hover:text-slate-800'
                       }`}
                     >
-                      {r === 'uni_admin' ? 'Uni Admin' : r === 'platform_admin' ? 'Admin' : 'Student'}
+                      {r === 'uni_admin' ? 'Uni' : r === 'platform_admin' ? 'Admin' : r === 'business' ? 'Partner' : 'Student'}
                     </button>
                   ))}
                 </div>

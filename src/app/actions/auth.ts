@@ -12,7 +12,7 @@ const COOKIE_NAME = 'nexora_session';
 export interface UserSession {
   id: number;
   email: string;
-  role: 'student' | 'uni_admin' | 'platform_admin';
+  role: 'student' | 'uni_admin' | 'platform_admin' | 'business';
   name?: string;
   profileId?: number;
 }
@@ -71,6 +71,12 @@ export async function loginUser(prevState: any, formData: FormData) {
       return { error: 'Invalid email or password.' };
     }
 
+    // Check if suspended
+    if (user.is_active === false) {
+      console.log(`[Auth] Login blocked for suspended user: "${email}"`);
+      return { error: 'Your account has been suspended by the platform administrator.' };
+    }
+
     console.log(`[Auth] Login successful for: "${email}" (role: ${user.role})`);
 
     // Check verification status
@@ -121,7 +127,7 @@ export async function registerUser(prevState: any, formData: FormData) {
   const name = formData.get('name') as string;
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
-  const role = formData.get('role') as 'student' | 'uni_admin' | 'platform_admin';
+  const role = formData.get('role') as 'student' | 'uni_admin' | 'platform_admin' | 'business';
 
   if (!email || !password || !role || (role === 'student' && !name)) {
     return { error: 'All fields are required.' };
@@ -409,6 +415,9 @@ export async function loginWithGoogle(idToken: string, mockData?: { email: strin
       console.log(`[Auth] Created student profile for user ID: ${user.id}`);
     } else {
       user = userRes.rows[0];
+      if (user.is_active === false) {
+        return { error: 'Your account has been suspended by the platform administrator.' };
+      }
       // Check if user is verified. If not, auto-verify since they authenticated with Google
       if (!user.is_verified) {
         await query('UPDATE users SET is_verified = TRUE WHERE id = $1', [user.id]);

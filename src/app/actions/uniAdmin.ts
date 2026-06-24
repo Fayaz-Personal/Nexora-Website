@@ -119,3 +119,111 @@ export async function deleteCourse(courseId: number, universityId: number) {
     return { error: 'Failed to delete course' };
   }
 }
+
+// 6. Update University Profile details
+export async function updateUniversityProfile(univId: number, data: {
+  name: string;
+  ranking: number;
+  tuitionFeeMin: number;
+  tuitionFeeMax: number;
+  acceptanceRate: number;
+  description: string;
+  website: string;
+  logoUrl: string;
+}) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== 'uni_admin') throw new Error('Unauthorized');
+
+    await query(`
+      UPDATE universities
+      SET name = $1, ranking = $2, tuition_fee_min = $3, tuition_fee_max = $4,
+          acceptance_rate = $5, description = $6, website = $7, logo_url = $8
+      WHERE id = $9
+    `, [
+      data.name, data.ranking, data.tuitionFeeMin, data.tuitionFeeMax,
+      data.acceptanceRate, data.description, data.website, data.logoUrl, univId
+    ]);
+
+    revalidatePath('/uni-admin/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating university profile:', error);
+    return { error: error.message || 'Failed to update university details.' };
+  }
+}
+
+// 7. Get Scholarships by provider
+export async function getUniScholarships(providerName: string) {
+  try {
+    const res = await query('SELECT * FROM scholarships WHERE provider = $1 ORDER BY id DESC', [providerName]);
+    return res.rows;
+  } catch (error) {
+    console.error('Error fetching university scholarships:', error);
+    return [];
+  }
+}
+
+// 8. Save Scholarship (Insert or Update)
+export async function saveScholarship(data: {
+  id?: number;
+  name: string;
+  provider: string;
+  type: 'government' | 'university' | 'private';
+  amount: string;
+  eligibilityCriteria: string;
+  deadline: string;
+  coverage: string;
+}) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || (user.role !== 'uni_admin' && user.role !== 'platform_admin')) throw new Error('Unauthorized');
+
+    if (data.id) {
+      // Update
+      await query(`
+        UPDATE scholarships
+        SET name = $1, provider = $2, type = $3, amount = $4,
+            eligibility_criteria = $5, deadline = $6, coverage = $7
+        WHERE id = $8
+      `, [
+        data.name, data.provider, data.type, data.amount,
+        data.eligibilityCriteria, data.deadline || null, data.coverage, data.id
+      ]);
+    } else {
+      // Insert
+      await query(`
+        INSERT INTO scholarships (name, provider, type, amount, eligibility_criteria, deadline, coverage)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [
+        data.name, data.provider, data.type, data.amount,
+        data.eligibilityCriteria, data.deadline || null, data.coverage
+      ]);
+    }
+
+    revalidatePath('/student/scholarships');
+    revalidatePath('/uni-admin/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error saving scholarship:', error);
+    return { error: error.message || 'Failed to save scholarship.' };
+  }
+}
+
+// 9. Delete Scholarship
+export async function deleteScholarship(id: number) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || (user.role !== 'uni_admin' && user.role !== 'platform_admin')) throw new Error('Unauthorized');
+
+    await query('DELETE FROM scholarships WHERE id = $1', [id]);
+    
+    revalidatePath('/student/scholarships');
+    revalidatePath('/uni-admin/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error deleting scholarship:', error);
+    return { error: error.message || 'Failed to delete scholarship.' };
+  }
+}
+

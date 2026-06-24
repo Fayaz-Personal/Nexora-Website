@@ -21,6 +21,8 @@ async function migrate() {
     // Drop existing tables to ensure clean schema (in reverse dependency order)
     console.log('Dropping existing tables...');
     await client.query(`
+      DROP TABLE IF EXISTS uni_admin_profiles CASCADE;
+      DROP TABLE IF EXISTS announcements CASCADE;
       DROP TABLE IF EXISTS funding_providers CASCADE;
       DROP TABLE IF EXISTS ai_chat_logs CASCADE;
       DROP TABLE IF EXISTS analytics_events CASCADE;
@@ -57,9 +59,10 @@ async function migrate() {
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
-        role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'uni_admin', 'platform_admin')),
+        role VARCHAR(50) NOT NULL CHECK (role IN ('student', 'uni_admin', 'platform_admin', 'business')),
         otp_code VARCHAR(6),
         is_verified BOOLEAN DEFAULT FALSE,
+        is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -126,6 +129,17 @@ async function migrate() {
       );
     `);
 
+    // 4c. announcements
+    await client.query(`
+      CREATE TABLE announcements (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        target_role VARCHAR(50) DEFAULT 'all',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     // 4b. ai_chat_logs
     await client.query(`
       CREATE TABLE ai_chat_logs (
@@ -150,6 +164,16 @@ async function migrate() {
         acceptance_rate DECIMAL(5, 2),
         description TEXT,
         website VARCHAR(255),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 5b. uni_admin_profiles
+    await client.query(`
+      CREATE TABLE uni_admin_profiles (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        university_id INTEGER REFERENCES universities(id) ON DELETE CASCADE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -438,6 +462,7 @@ async function migrate() {
     const adminHash = await bcrypt.hash('adminpassword', 10);
     const uniAdminHash = await bcrypt.hash('unipassword', 10);
     const studentHash = await bcrypt.hash('studentpassword', 10);
+    const businessHash = await bcrypt.hash('businesspassword', 10);
 
     // Insert Users
     const usersRes = await client.query(`
@@ -445,6 +470,7 @@ async function migrate() {
       ('admin@nexora.com', '${adminHash}', 'platform_admin', TRUE),
       ('admin_access@nexora.com', '${adminHash}', 'platform_admin', TRUE),
       ('uni@nexora.com', '${uniAdminHash}', 'uni_admin', TRUE),
+      ('business@nexora.com', '${businessHash}', 'business', TRUE),
       ('student@nexora.com', '${studentHash}', 'student', TRUE),
       ('ashwin@nexora.com', '${studentHash}', 'student', TRUE),
       ('sarah@nexora.com', '${studentHash}', 'student', TRUE),
@@ -454,6 +480,7 @@ async function migrate() {
 
     const adminId = usersRes.rows.find(u => u.role === 'platform_admin').id;
     const uniAdminId = usersRes.rows.find(u => u.role === 'uni_admin').id;
+    const businessId = usersRes.rows.find(u => u.role === 'business').id;
     const studentId = usersRes.rows.find(u => u.role === 'student' && u.email === 'student@nexora.com').id;
     const ashwinId = usersRes.rows.find(u => u.role === 'student' && u.email === 'ashwin@nexora.com').id;
     const sarahId = usersRes.rows.find(u => u.role === 'student' && u.email === 'sarah@nexora.com').id;
@@ -540,6 +567,21 @@ async function migrate() {
     const oxfordId = univsRes.rows.find(u => u.name === 'University of Oxford').id;
     const torontoId = univsRes.rows.find(u => u.name === 'University of Toronto').id;
     const melbId = univsRes.rows.find(u => u.name === 'University of Melbourne').id;
+
+    // Seed Uni Admin Profile
+    await client.query(`
+      INSERT INTO uni_admin_profiles (user_id, university_id) VALUES
+      (${uniAdminId}, ${tumId})
+    `);
+
+    // Seed Announcements
+    await client.query(`
+      INSERT INTO announcements (title, message, target_role) VALUES
+      ('Welcome to Nexora AI!', 'We have successfully launched the AI roadmap advisor counselor. Start personalizing your profile today!', 'student'),
+      ('Important Deadline Reminder', 'Standardized test scores (GRE/IELTS) must be submitted by October 31st for Fall applications.', 'student'),
+      ('University Management Live', 'University partners can now upload course curriculum fees and handle candidate intake statistics.', 'uni_admin'),
+      ('Business Partner Services Active', 'Accommodations, visa checklists, and flight travel assistance are open for business partners.', 'business')
+    `);
 
     // Seed Courses
     const coursesRes = await client.query(`
