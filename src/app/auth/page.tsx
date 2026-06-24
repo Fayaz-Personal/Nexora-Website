@@ -65,7 +65,12 @@ export default function AuthPage() {
       });
       (window as any).google.accounts.id.renderButton(
         document.getElementById('google-signin-button'),
-        { theme: 'outline', size: 'large', width: 350 }
+        { 
+          theme: 'outline', 
+          size: 'large', 
+          width: 350,
+          text: isLogin ? 'signin_with' : 'signup_with'
+        }
       );
     }
   };
@@ -86,7 +91,7 @@ export default function AuthPage() {
     if (googleClientId && typeof window !== 'undefined' && (window as any).google?.accounts?.id) {
       initGoogleSignIn();
     }
-  }, [googleClientId]);
+  }, [googleClientId, isLogin]);
 
   const [loginState, loginAction, isLoginPending] = useActionState(
     async (prevState: any, formData: FormData) => {
@@ -745,7 +750,7 @@ export default function AuthPage() {
                 Google Identity Sandbox
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Simulate OAuth 2.0 flow. Enter mock credentials to register or login.
+                Simulate OAuth 2.0 flow. Enter mock credentials to {isLogin ? 'log in' : 'register'}.
               </p>
             </div>
  
@@ -821,7 +826,7 @@ export default function AuthPage() {
                 disabled={isGoogleLoading}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md disabled:opacity-50"
               >
-                {isGoogleLoading ? 'Authenticating...' : 'Sign In as Verified Google User'}
+                {isGoogleLoading ? 'Authenticating...' : isLogin ? 'Sign In as Verified Google User' : 'Sign Up as Verified Google User'}
               </button>
  
               <div className="flex justify-center gap-2 pt-2">
