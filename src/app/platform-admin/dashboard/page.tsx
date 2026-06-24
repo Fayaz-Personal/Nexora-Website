@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { 
   Users, Landmark, Award, MessageSquare, Loader2, Compass, Activity,
   Megaphone, FileSpreadsheet, Search, UserCheck, UserX, AlertCircle,
-  Calendar, Send, Filter, ShieldAlert, Sparkles, CheckCircle2, ChevronRight
+  Calendar, Send, Filter, ShieldAlert, Sparkles, CheckCircle2, ChevronRight,
+  Plus, X, Trash2
 } from 'lucide-react';
 import { getCurrentUser } from '@/app/actions/auth';
 import { 
@@ -13,7 +14,9 @@ import {
   getPlatformDetailedData, 
   toggleUserStatus, 
   broadcastAnnouncement,
-  getExportDataset
+  getExportDataset,
+  createPlatformUser,
+  deletePlatformUser
 } from '@/app/actions/platformAdmin';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -42,6 +45,14 @@ export default function PlatformAdminDashboard() {
 
   // Moderation state
   const [moderatingId, setModeratingId] = useState<number | null>(null);
+
+  // Create User credentials state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPassword, setCreatePassword] = useState('');
+  const [createRole, setCreateRole] = useState<'platform_admin' | 'uni_admin' | 'business'>('uni_admin');
+  const [createUniId, setCreateUniId] = useState<number | undefined>(undefined);
+  const [submittingCreate, setSubmittingCreate] = useState(false);
 
   // Export state
   const [exportingType, setExportingType] = useState<string | null>(null);
@@ -87,6 +98,9 @@ export default function PlatformAdminDashboard() {
 
     if (detailed) {
       setDetailedData(detailed);
+      if (detailed.universities && detailed.universities.length > 0) {
+        setCreateUniId(detailed.universities[0].id);
+      }
     }
     setLoading(false);
   };
@@ -94,6 +108,69 @@ export default function PlatformAdminDashboard() {
   useEffect(() => {
     loadAllData();
   }, [router]);
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createEmail.trim() || !createPassword.trim()) {
+      setFeedback({ type: 'error', text: 'Email and password fields are required.' });
+      return;
+    }
+
+    setSubmittingCreate(true);
+    const res = await createPlatformUser({
+      email: createEmail,
+      password_hash: createPassword,
+      role: createRole,
+      universityId: createRole === 'uni_admin' ? Number(createUniId) : undefined
+    });
+
+    if (res.success) {
+      setFeedback({ type: 'success', text: `Portal credentials successfully created for: ${createEmail}!` });
+      setIsCreateModalOpen(false);
+      setCreateEmail('');
+      setCreatePassword('');
+      setCreateRole('uni_admin');
+      
+      // Reload detailed user list
+      const detailed = await getPlatformDetailedData();
+      if (detailed) {
+        setDetailedData(detailed);
+      }
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'Failed to create credentials.' });
+    }
+    setSubmittingCreate(false);
+    setTimeout(() => setFeedback(null), 4500);
+  };
+
+  const handleDeleteUser = async (userId: number, email: string) => {
+    if (userId === currentUser?.id) {
+      setFeedback({ type: 'error', text: 'Security restriction: You cannot delete your own admin account.' });
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
+    if (!confirm(`Are you absolutely sure you want to permanently delete user credentials for ${email}? All associated profiles and platform access will be removed.`)) {
+      return;
+    }
+
+    setModeratingId(userId);
+    const res = await deletePlatformUser(userId);
+    if (res.success) {
+      setDetailedData((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          users: prev.users.filter((u: any) => u.id !== userId)
+        };
+      });
+      setFeedback({ type: 'success', text: `User account for ${email} has been permanently deleted.` });
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'Failed to delete user account.' });
+    }
+    setModeratingId(null);
+    setTimeout(() => setFeedback(null), 4500);
+  };
 
   const handleToggleStatus = async (userId: number, currentStatus: boolean) => {
     if (userId === currentUser?.id) {
@@ -396,19 +473,29 @@ export default function PlatformAdminDashboard() {
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <Filter className="h-4 w-4 text-slate-400" />
-                <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="w-full sm:w-auto text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:bg-white focus:border-teal-dark text-slate-700"
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-slate-400" />
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:bg-white focus:border-teal-dark text-slate-700"
+                  >
+                    <option value="all">All Roles</option>
+                    <option value="student">Students Only</option>
+                    <option value="uni_admin">University Admins</option>
+                    <option value="business">Business Partners</option>
+                    <option value="platform_admin">Platform Admins</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-dark to-teal-green text-white font-bold px-4 py-2.5 text-xs hover:shadow-md cursor-pointer transition-all"
                 >
-                  <option value="all">All Roles</option>
-                  <option value="student">Students Only</option>
-                  <option value="uni_admin">University Admins</option>
-                  <option value="business">Business Partners</option>
-                  <option value="platform_admin">Platform Admins</option>
-                </select>
+                  <Plus className="h-4 w-4" />
+                  <span>Create Credentials</span>
+                </button>
               </div>
             </div>
 
@@ -467,27 +554,38 @@ export default function PlatformAdminDashboard() {
                                 </span>
                               </div>
                             </td>
-                            <td className="py-4 px-6 text-right">
+                            <td className="py-4 px-6 text-right flex items-center justify-end gap-2">
                               {isSelf ? (
                                 <span className="text-[10px] text-slate-400 italic">Self session active</span>
                               ) : (
-                                <button
-                                  onClick={() => handleToggleStatus(user.id, user.isActive)}
-                                  disabled={moderatingId === user.id}
-                                  className={`px-3 py-1.5 rounded-lg border font-bold text-[10.5px] cursor-pointer transition-all ${
-                                    user.isActive 
-                                      ? 'border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100'
-                                      : 'border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
-                                  }`}
-                                >
-                                  {moderatingId === user.id ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" />
-                                  ) : user.isActive ? (
-                                    'Suspend Access'
-                                  ) : (
-                                    'Reactivate Access'
-                                  )}
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => handleToggleStatus(user.id, user.isActive)}
+                                    disabled={moderatingId === user.id}
+                                    className={`px-3 py-1.5 rounded-lg border font-bold text-[10.5px] cursor-pointer transition-all ${
+                                      user.isActive 
+                                        ? 'border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100'
+                                        : 'border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                                    }`}
+                                  >
+                                    {moderatingId === user.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" />
+                                    ) : user.isActive ? (
+                                      'Suspend'
+                                    ) : (
+                                      'Reactivate'
+                                    )}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteUser(user.id, user.email)}
+                                    disabled={moderatingId === user.id}
+                                    className="p-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg text-rose-600 cursor-pointer transition-all"
+                                    title="Delete Credentials"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
                               )}
                             </td>
                           </tr>
@@ -693,6 +791,100 @@ export default function PlatformAdminDashboard() {
         )}
 
       </div>
+
+      {/* Create Credentials Modal */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-md font-bold text-slate-900 border-b border-slate-100 pb-3 mb-5 uppercase tracking-wide flex items-center justify-between">
+              <span>Create Portal Credentials</span>
+              <button 
+                onClick={() => setIsCreateModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </h3>
+
+            <form onSubmit={handleCreateUser} className="space-y-4 text-xs font-semibold">
+              <div>
+                <label className="block text-slate-500 mb-1.5 uppercase">Account Email Address</label>
+                <input
+                  type="email"
+                  value={createEmail}
+                  onChange={(e) => setCreateEmail(e.target.value)}
+                  placeholder="e.g. partner@company.com"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-dark transition-all text-slate-800 font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1.5 uppercase">Account Secure Password</label>
+                <input
+                  type="password"
+                  value={createPassword}
+                  onChange={(e) => setCreatePassword(e.target.value)}
+                  placeholder="Minimum 6 characters"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-dark transition-all text-slate-800 font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-500 mb-1.5 uppercase">Administrative Portal Role</label>
+                <select
+                  value={createRole}
+                  onChange={(e) => {
+                    const selectedRole = e.target.value as any;
+                    setCreateRole(selectedRole);
+                    if (selectedRole === 'uni_admin' && detailedData?.universities && detailedData.universities.length > 0) {
+                      setCreateUniId(detailedData.universities[0].id);
+                    }
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-dark transition-all text-slate-650"
+                >
+                  <option value="uni_admin">University Admin (Linked to College)</option>
+                  <option value="business">Business Partner (Accommodations/Logistics)</option>
+                  <option value="platform_admin">System Platform Admin (Root Admin)</option>
+                </select>
+              </div>
+
+              {createRole === 'uni_admin' && (
+                <div>
+                  <label className="block text-slate-500 mb-1.5 uppercase">Assign University</label>
+                  <select
+                    value={createUniId}
+                    onChange={(e) => setCreateUniId(Number(e.target.value))}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-dark transition-all text-slate-650"
+                  >
+                    {detailedData?.universities.map((uni: any) => (
+                      <option key={uni.id} value={uni.id}>{uni.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingCreate}
+                  className="glow-btn text-white font-bold px-5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer text-xs"
+                >
+                  {submittingCreate ? 'Creating...' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -16,7 +16,7 @@ export default function AuthPage() {
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const [role, setRole] = useState<'student' | 'uni_admin' | 'platform_admin' | 'business'>('student');
+  const role = 'student';
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [recoveryStep, setRecoveryStep] = useState<1 | 2>(1);
@@ -353,31 +353,6 @@ export default function AuthPage() {
                   : 'Start your student profile and unlock AI advising'}
               </p>
             </div>
-
-            {/* Role Toggle (Only shown for Sign Up) */}
-            {!isLogin && (
-              <div className="mb-5">
-                <label className="block text-sm font-bold text-slate-600 uppercase tracking-wider mb-2 text-center">
-                  Register As
-                </label>
-                <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  {(['student', 'uni_admin', 'platform_admin', 'business'] as const).map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRole(r)}
-                      className={`py-2 px-0.5 text-xs font-bold rounded-lg transition-all capitalize cursor-pointer ${
-                        role === r
-                          ? 'bg-teal-dark text-white shadow-sm font-extrabold'
-                          : 'text-slate-655 hover:text-slate-800'
-                      }`}
-                    >
-                      {r === 'uni_admin' ? 'Uni' : r === 'platform_admin' ? 'Admin' : r === 'business' ? 'Partner' : 'Student'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Form Success/Error Feedback */}
             {successMessage && !error && (

@@ -1,5 +1,6 @@
 'use server';
 
+import bcrypt from 'bcryptjs';
 import { query } from '@/db';
 import { getCurrentUser } from './auth';
 
@@ -52,7 +53,7 @@ export async function getPlatformStats() {
   }
 }
 
-// 2. Get Platform Detailed Data (for moderation and broadcaster tabs)
+// 2. Get Platform Detailed Data (for moderation, broadcaster, and user manager tabs)
 export async function getPlatformDetailedData() {
   try {
     const user = await getCurrentUser();
@@ -74,10 +75,12 @@ export async function getPlatformDetailedData() {
     `);
 
     // Fetch universities for display/mapping
-    const uniRes = await query('SELECT id, name FROM universities');
+    const uniRes = await query('SELECT id, name FROM universities ORDER BY name ASC');
     const uniMap = new Map();
+    const universitiesList: { id: number; name: string }[] = [];
     uniRes.rows.forEach(row => {
       uniMap.set(row.id, row.name);
+      universitiesList.push({ id: row.id, name: row.name });
     });
 
     const users = usersRes.rows.map(row => {
@@ -106,6 +109,7 @@ export async function getPlatformDetailedData() {
 
     return {
       users,
+      universities: universitiesList,
       announcements: announcementsRes.rows.map(row => ({
         id: row.id,
         title: row.title,
@@ -217,5 +221,90 @@ export async function getExportDataset(type: 'users' | 'courses' | 'budgets') {
   } catch (error) {
     console.error('Error fetching export dataset:', error);
     return null;
+  }
+}
+
+// 6. Create Platform Credentials (for Admin, University Admins, and Business Partners)
+export async function createPlatformUser(formData: {
+  email: string;
+  password_hash: string;
+  role: 'student' | 'uni_admin' | 'platform_admin' | 'business';
+  universityId?: number;
+}) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== 'platform_admin') {
+      return { error: 'Unauthorized' };
+    }
+
+    const email = formData.email.trim().toLowerCase();
+    const password = formData.password_hash.trim();
+
+    if (!email || !password || !formData.role) {
+      return { error: 'All fields are required.' };
+    }
+
+    // Check if user already exists
+    const checkRes = await query('SELECT id FROM users WHERE email = $1', [email]);
+    if (checkRes.rows.length > 0) {
+      return { error: 'This email is already registered.' };
+    }
+
+    // Hash password with bcryptjs
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    // Insert user credentials (is_verified = TRUE)
+    const userRes = await query(
+      'INSERT INTO users (email, password_hash, role, is_verified) VALUES ($1, $2, $3, TRUE) RETURNING id',
+      [email, passwordHash, formData.role]
+    );
+    const newUserId = userRes.rows[0].id;
+
+    // If uni_admin, create uni_admin_profiles entry linking to selected university
+    if (formData.role === 'uni_admin' && formData.universityId) {
+      await query(
+        'INSERT INTO uni_admin_profiles (user_id, university_id) VALUES ($1, $2)',
+        [newUserId, formData.universityId]
+      );
+    }
+
+    // Track analytics log
+    await query(
+      'INSERT INTO analytics_events (event_type, user_id, metadata_json) VALUES ($1, $2, $3)',
+      ['user_creation', user.id, JSON.stringify({ created_user_id: newUserId, role: formData.role })]
+    );
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error creating platform credentials:', error);
+    return { error: error.message || 'Database transaction failed.' };
+  }
+}
+
+// 7. Delete Platform Account
+export async function deletePlatformUser(userId: number) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.role !== 'platform_admin') {
+      return { error: 'Unauthorized' };
+    }
+
+    if (userId === user.id) {
+      return { error: 'Security restriction: You cannot delete your own admin account.' };
+    }
+
+    await query('DELETE FROM users WHERE id = $1', [userId]);
+
+    // Track analytics log
+    await query(
+      'INSERT INTO analytics_events (event_type, user_id, metadata_json) VALUES ($1, $2, $3)',
+      ['user_deletion', user.id, JSON.stringify({ deleted_user_id: userId })]
+    );
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error deleting platform user:', error);
+    return { error: error.message || 'Database transaction failed.' };
   }
 }
