@@ -510,7 +510,7 @@ export default function AuthPage() {
                       <path d="M12,6.13c1.32,0 2.5,0.45 3.44,1.35l2.58,-2.58C16.46,3.43 14.42,2.6 12,2.6c-3.54,0 -6.6,2.07 -8.1,5.04l4.06,3.2C8.67,7.7 10.66,6.13 12,6.13z" fill="#EA4335" />
                     </g>
                   </svg>
-                  <span>Continue with Google</span>
+                  <span>{isLogin ? 'Sign In with Google' : 'Sign Up with Google'}</span>
                 </button>
               </div>
             )}
