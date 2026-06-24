@@ -371,7 +371,7 @@ export default function UniversitiesPage() {
                         <div>
                           <div className="text-[10px] font-semibold text-slate-600 uppercase">Tuition (Min)</div>
                           <div className="text-[11px] font-extrabold text-teal-dark mt-0.5">
-                            {Number(univ.tuition_fee_min) === 0 ? 'Free' : formatPrice(Number(univ.tuition_fee_min), univ.country_currency || 'USD')}
+                            {Number(univ.tuition_fee_min) === 0 ? 'Free' : formatPrice(Number(univ.tuition_fee_min), 'USD')}
                           </div>
                         </div>
                       </div>
@@ -448,7 +448,7 @@ export default function UniversitiesPage() {
                     <div className="flex md:flex-col items-center md:items-end justify-between w-full md:w-auto border-t md:border-t-0 border-teal-green/15 pt-3 md:pt-0 gap-3">
                       <div className="text-right">
                         <div className="flex items-center text-xs font-bold text-slate-900 md:justify-end">
-                          <span>{Number(course.fees) === 0 ? 'Tuition Free' : `${formatPrice(Number(course.fees), course.country_currency || 'USD')}/yr`}</span>
+                          <span>{Number(course.fees) === 0 ? 'Tuition Free' : `${formatPrice(Number(course.fees), 'USD')}/yr`}</span>
                         </div>
                         <div className="flex items-center gap-1 text-[11px] text-slate-500 md:justify-end mt-0.5">
                           <Clock className="h-3 w-3" />

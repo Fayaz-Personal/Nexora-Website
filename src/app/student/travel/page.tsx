@@ -13,6 +13,7 @@ interface FlightEstimate {
   est_cost: string;
   checklist_json: {
     tips: string[];
+    arrival_steps?: string[];
   };
 }
 
@@ -31,14 +32,16 @@ export default function TravelPlannerPage() {
   const matchedFlight = flights.find(f => f.country_name === selectedDest);
 
   // Default Arrival Checklist items
-  const arrivalSteps = [
-    'Register address (Meldebescheinigung) at local town hall',
-    'Open local bank account / Activate blocked account payouts',
-    'Sign student health insurance contract',
-    'Enroll officially at the university campus registrar office',
-    'Get local mobile SIM card (prepaid/postpaid)',
-    'Purchase regional transit student pass (e.g., Deutschlandticket)'
-  ];
+  const arrivalSteps = (matchedFlight && matchedFlight.checklist_json && matchedFlight.checklist_json.arrival_steps)
+    ? matchedFlight.checklist_json.arrival_steps
+    : [
+        'Register address at local town hall or municipality office',
+        'Open a local student bank account',
+        'Sign a student health insurance contract',
+        'Enroll officially at the university campus registrar office',
+        'Get a local mobile SIM card',
+        'Purchase a regional transit student pass'
+      ];
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -60,10 +63,14 @@ export default function TravelPlannerPage() {
           <select
             value={selectedDest}
             onChange={(e) => setSelectedDest(e.target.value)}
-            className="bg-teal-dark border border-teal-green/30 rounded-lg text-xs font-bold text-teal-bright p-2 focus:outline-none focus:border-yellow-green"
+            className="bg-teal-dark border border-teal-green/30 rounded-lg text-xs font-bold text-teal-bright p-2 focus:outline-none focus:border-yellow-green cursor-pointer"
           >
-            <option value="Germany">Germany</option>
-            <option value="United States">United States</option>
+            {Array.from(new Set(flights.map(f => f.country_name)))
+              .sort()
+              .map(country => (
+                <option key={country} value={country}>{country}</option>
+              ))
+            }
           </select>
         </div>
       </div>
@@ -145,7 +152,7 @@ export default function TravelPlannerPage() {
               </p>
 
               <div className="space-y-3.5">
-                {arrivalSteps.map((step, idx) => (
+                {arrivalSteps.map((step: string, idx: number) => (
                   <div key={idx} className="flex gap-3 items-start p-3 bg-teal-dark/10 border border-teal-green/15 rounded-xl text-xs text-slate-800">
                     <CheckCircle2 className="h-4 w-4 text-teal-bright shrink-0 mt-0.5" />
                     <span>{step}</span>

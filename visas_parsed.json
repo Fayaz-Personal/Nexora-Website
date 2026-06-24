@@ -1,0 +1,378 @@
+{
+  "visas": [
+    {
+      "country": "USA",
+      "visa_type": "F-1",
+      "documents": [
+        "Passport",
+        "I-20 Form",
+        "DS-160 Confirmation",
+        "SEVIS Fee Receipt",
+        "Passport Photo",
+        "Admission Letter",
+        "Academic Transcripts",
+        "IELTS/TOEFL (if required)",
+        "Financial Proof",
+        "Visa Fee Receipt",
+        "Interview Appointment"
+      ]
+    },
+    {
+      "country": "Canada",
+      "visa_type": "Study Permit",
+      "documents": [
+        "Passport",
+        "Letter of Acceptance (LOA)",
+        "Passport Photos",
+        "Proof of Funds",
+        "GIC (if applicable)",
+        "Medical Exam",
+        "Biometrics",
+        "Academic Documents",
+        "IELTS/PTE (if required)",
+        "Statement of Purpose (SOP)"
+      ]
+    },
+    {
+      "country": "UK",
+      "visa_type": "Student Visa",
+      "documents": [
+        "Passport",
+        "CAS Letter",
+        "Financial Proof",
+        "TB Test (if applicable)",
+        "IELTS/PTE (if required)",
+        "Passport Photo",
+        "Academic Certificates",
+        "Visa Fee Payment",
+        "Immigration Health Surcharge (IHS) Receipt"
+      ]
+    },
+    {
+      "country": "Australia",
+      "visa_type": "Student Visa (Subclass 500)",
+      "documents": [
+        "Passport",
+        "CoE (Confirmation of Enrolment)",
+        "Genuine Student Statement",
+        "Financial Proof",
+        "OSHC Insurance",
+        "Medical Examination",
+        "Biometrics",
+        "English Test Scores",
+        "Academic Records"
+      ]
+    },
+    {
+      "country": "Germany",
+      "visa_type": "National Student Visa (Type D)",
+      "documents": [
+        "Passport",
+        "University Admission Letter",
+        "Blocked Account/Financial Proof",
+        "APS Certificate (for Indian students)",
+        "Health Insurance",
+        "Academic Documents",
+        "Language Certificate (German/English)",
+        "Motivation Letter",
+        "CV"
+      ]
+    },
+    {
+      "country": "France",
+      "visa_type": "Long Stay Student Visa (VLS-TS)",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Campus France Approval",
+        "Financial Proof",
+        "Accommodation Proof",
+        "Health Insurance",
+        "Passport Photos",
+        "Academic Records"
+      ]
+    },
+    {
+      "country": "Italy",
+      "visa_type": "National Study Visa (Type D)",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Accommodation Proof",
+        "Health Insurance",
+        "Flight Reservation",
+        "Academic Certificates"
+      ]
+    },
+    {
+      "country": "Spain",
+      "visa_type": "Long Stay Study Visa",
+      "documents": [
+        "Passport",
+        "University Admission Letter",
+        "Financial Proof",
+        "Medical Certificate",
+        "Police Clearance Certificate",
+        "Health Insurance",
+        "Accommodation Proof"
+      ]
+    },
+    {
+      "country": "Netherlands",
+      "visa_type": "MVV + Residence Permit",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Passport Photo",
+        "Health Insurance",
+        "Academic Documents"
+      ]
+    },
+    {
+      "country": "Ireland",
+      "visa_type": "Stamp 2 Student Visa",
+      "documents": [
+        "Passport",
+        "Offer Letter",
+        "Tuition Fee Receipt",
+        "Financial Proof",
+        "Health Insurance",
+        "Passport Photos",
+        "Academic Documents"
+      ]
+    },
+    {
+      "country": "New Zealand",
+      "visa_type": "Fee Paying Student Visa",
+      "documents": [
+        "Passport",
+        "Offer of Place",
+        "Financial Proof",
+        "Medical Certificate",
+        "Chest X-ray (if required)",
+        "Police Certificate",
+        "Health Insurance"
+      ]
+    },
+    {
+      "country": "Switzerland",
+      "visa_type": "National Student Visa (D)",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Motivation Letter",
+        "CV",
+        "Accommodation Proof",
+        "Health Insurance"
+      ]
+    },
+    {
+      "country": "Sweden",
+      "visa_type": "Residence Permit for Studies",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Tuition Fee Receipt",
+        "Financial Proof",
+        "Health Insurance (if required)",
+        "Passport Photo"
+      ]
+    },
+    {
+      "country": "Finland",
+      "visa_type": "Residence Permit for Studies",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Health Insurance",
+        "Passport Photo",
+        "Academic Records"
+      ]
+    },
+    {
+      "country": "Denmark",
+      "visa_type": "Residence Permit for Higher Education",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Health Insurance",
+        "Biometric Data"
+      ]
+    },
+    {
+      "country": "Norway",
+      "visa_type": "Student Residence Permit",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Accommodation Proof",
+        "Passport Photo"
+      ]
+    },
+    {
+      "country": "Singapore",
+      "visa_type": "Student Pass",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Passport Photo",
+        "Financial Proof",
+        "Medical Examination",
+        "Academic Documents"
+      ]
+    },
+    {
+      "country": "Japan",
+      "visa_type": "Student Visa",
+      "documents": [
+        "Passport",
+        "Certificate of Eligibility (COE)",
+        "Admission Letter",
+        "Financial Proof",
+        "Academic Certificates",
+        "Passport Photo"
+      ]
+    },
+    {
+      "country": "South Korea",
+      "visa_type": "D-2 Student Visa",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Academic Records",
+        "Passport Photo",
+        "Health Insurance"
+      ]
+    },
+    {
+      "country": "UAE",
+      "visa_type": "Student Visa",
+      "documents": [
+        "Passport",
+        "Admission Letter",
+        "Financial Proof",
+        "Medical Fitness Certificate",
+        "Health Insurance",
+        "Passport Photos"
+      ]
+    }
+  ],
+  "common_steps": [
+    {
+      "title": "Step 1: Receive Admission Offer",
+      "descriptions": [
+        "Apply to your chosen university.",
+        "Receive the Admission/Offer Letter (e.g., LOA, CAS, I-20, CoE)."
+      ]
+    },
+    {
+      "title": "Step 2: Accept the Offer",
+      "descriptions": [
+        "Accept the admission offer.",
+        "Pay the tuition fee or deposit (if required).",
+        "Receive the official enrollment confirmation."
+      ]
+    },
+    {
+      "title": "Step 3: Arrange Financial Documents",
+      "descriptions": [
+        "Prepare proof that you can finance your studies:",
+        "Bank statements",
+        "Education loan sanction letter (if applicable)",
+        "Scholarship letter (if applicable)",
+        "Sponsor's financial documents (if sponsored)"
+      ]
+    },
+    {
+      "title": "Step 4: Gather Required Documents",
+      "descriptions": [
+        "Collect all required documents:",
+        "Valid Passport",
+        "Passport-size Photographs",
+        "Admission Letter",
+        "Academic Certificates & Transcripts",
+        "English Language Test Scores (if required)",
+        "Financial Documents",
+        "Health Insurance",
+        "Medical Certificate (if required)",
+        "Police Clearance Certificate (if required)",
+        "Country-specific documents"
+      ]
+    },
+    {
+      "title": "Step 5: Complete the Visa Application",
+      "descriptions": [
+        "Fill out the student visa application form.",
+        "Upload or submit all required documents.",
+        "Review the application carefully before submission."
+      ]
+    },
+    {
+      "title": "Step 6: Pay the Visa Fee",
+      "descriptions": [
+        "Pay the required visa application fee.",
+        "Save the payment confirmation/receipt."
+      ]
+    },
+    {
+      "title": "Step 7: Schedule Biometrics (If Required)",
+      "descriptions": [
+        "Book a biometrics appointment.",
+        "Visit the visa application center.",
+        "Submit fingerprints and photograph."
+      ]
+    },
+    {
+      "title": "Step 8: Complete Medical Examination (If Required)",
+      "descriptions": [
+        "Visit an approved medical center.",
+        "Complete the required health examination.",
+        "Submit the medical report if requested."
+      ]
+    },
+    {
+      "title": "Step 9: Attend Visa Interview (If Required)",
+      "descriptions": [
+        "Some countries require an interview (e.g., USA).Carry all original documents and answer questions about:",
+        "Your course",
+        "University",
+        "Financial support",
+        "Study plans",
+        "Intention to return after studies (where applicable)"
+      ]
+    },
+    {
+      "title": "Step 10: Track Your Application",
+      "descriptions": [
+        "Use the application reference number.",
+        "Monitor your visa application status online."
+      ]
+    },
+    {
+      "title": "Step 11: Receive Visa Decision",
+      "descriptions": [
+        "Possible outcomes:",
+        "✅ Visa Approved",
+        "⏳ Additional Documents Requested",
+        "❌ Visa Refused"
+      ]
+    },
+    {
+      "title": "Step 12: Prepare for Travel",
+      "descriptions": [
+        "After visa approval:",
+        "Book your flight.",
+        "Arrange accommodation.",
+        "Pack original documents.",
+        "Travel before your course start date."
+      ]
+    }
+  ]
+}

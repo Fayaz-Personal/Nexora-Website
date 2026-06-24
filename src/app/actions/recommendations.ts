@@ -41,13 +41,45 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
     }
     const targetUniv = univRes.rows[0];
 
-    // 2. Fetch all other universities in database to provide real matching lists
-    const allUnivsRes = await query(`
+    // 2. Fetch a smart subset of other universities (10 dream, 10 moderate, 10 safe relative to target ranking)
+    const targetRank = targetUniv.ranking || 500;
+
+    const dreamRes = await query(`
       SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate 
       FROM universities u
       JOIN countries c ON u.country_id = c.id
-    `);
-    const allUnivs = allUnivsRes.rows;
+      WHERE u.ranking < $1
+      ORDER BY u.ranking DESC
+      LIMIT 10
+    `, [targetRank]);
+
+    const moderateRes = await query(`
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate 
+      FROM universities u
+      JOIN countries c ON u.country_id = c.id
+      ORDER BY ABS(u.ranking - $1) ASC
+      LIMIT 10
+    `, [targetRank]);
+
+    const safeRes = await query(`
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate 
+      FROM universities u
+      JOIN countries c ON u.country_id = c.id
+      WHERE u.ranking > $1
+      ORDER BY u.ranking ASC
+      LIMIT 10
+    `, [targetRank]);
+
+    // Combine and deduplicate
+    const combined = [...dreamRes.rows, ...moderateRes.rows, ...safeRes.rows];
+    const seen = new Set();
+    const allUnivs = [];
+    for (const u of combined) {
+      if (!seen.has(u.name)) {
+        seen.add(u.name);
+        allUnivs.push(u);
+      }
+    }
 
     const systemPrompt = `
 You are the Nexora Admission Chance Predictor, an expert university admissions audit system.
@@ -113,12 +145,12 @@ Target Choice:
     const resultText = data?.choices?.[0]?.message?.content || '{}';
     return JSON.parse(resultText) as PredictChanceResult;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error predicting admission chance:', error);
     return {
       probability: 50,
       status: 'Moderate',
-      explanation: 'Could not perform AI analysis due to API timeout or local connection issues. Please check your GROQ_API_KEY environment settings.',
+      explanation: `Could not perform AI analysis: ${error?.message || error || 'Unknown error'}. Please verify database connectivity and your GROQ_API_KEY environment settings.`,
       safeUniversities: ['Technical University of Munich', 'University of Toronto'],
       moderateUniversities: ['University of Melbourne'],
       dreamUniversities: ['Stanford University']
@@ -178,24 +210,61 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
       throw new Error("Groq API Key is missing. Please add GROQ_API_KEY to your .env.local file.");
     }
 
-    // 1. Fetch DB Universities
-    const univsRes = await query(`
+    // 1. Fetch DB Universities matching preferred countries, sorted by ranking (limit to 30)
+    let uniSql = `
       SELECT u.id, u.name, u.ranking, u.acceptance_rate, c.name as country_name 
       FROM universities u
       JOIN countries c ON u.country_id = c.id
-    `);
+    `;
+    const uniParams = [];
+    if (input.preferredCountries && input.preferredCountries.length > 0 && !input.preferredCountries.includes('Any')) {
+      uniSql += ` WHERE c.name = ANY($1) `;
+      uniParams.push(input.preferredCountries);
+    }
+    uniSql += ` ORDER BY u.ranking ASC LIMIT 30 `;
+    const univsRes = await query(uniSql, uniParams);
     const dbUnivs = univsRes.rows;
 
-    // 2. Fetch DB Courses
-    const coursesRes = await query(`
+    // 2. Fetch DB Courses matching budget, degree type, and country if specified (limit to 35)
+    let courseSql = `
       SELECT c.id, c.name, c.degree_type, c.department, c.fees, c.duration, u.name as university_name
       FROM courses c
       JOIN universities u ON c.university_id = u.id
-    `);
-    const dbCourses = coursesRes.rows;
+      JOIN countries co ON u.country_id = co.id
+      WHERE c.fees <= $1
+    `;
+    const courseParams: any[] = [input.budget];
+    let pIdx = 2;
 
-    // 3. Fetch DB Scholarships
-    const scholarshipsRes = await query('SELECT name, provider, amount, eligibility_criteria FROM scholarships');
+    if (input.preferredCountries && input.preferredCountries.length > 0 && !input.preferredCountries.includes('Any')) {
+      courseSql += ` AND co.name = ANY($${pIdx}) `;
+      courseParams.push(input.preferredCountries);
+      pIdx++;
+    }
+
+    if (input.preferredDegree && input.preferredDegree !== 'all') {
+      courseSql += ` AND c.degree_type = $${pIdx} `;
+      courseParams.push(input.preferredDegree);
+      pIdx++;
+    }
+
+    courseSql += ` ORDER BY u.ranking ASC, c.fees ASC LIMIT 35 `;
+    let coursesRes = await query(courseSql, courseParams);
+    let dbCourses = coursesRes.rows;
+
+    if (dbCourses.length === 0) {
+      // Fallback: Broaden search by removing constraints if no matches are found
+      const fallbackRes = await query(`
+        SELECT c.id, c.name, c.degree_type, c.department, c.fees, c.duration, u.name as university_name
+        FROM courses c
+        JOIN universities u ON c.university_id = u.id
+        ORDER BY u.ranking ASC LIMIT 35
+      `);
+      dbCourses = fallbackRes.rows;
+    }
+
+    // 3. Fetch DB Scholarships (limit to 20)
+    const scholarshipsRes = await query('SELECT name, provider, amount, eligibility_criteria FROM scholarships LIMIT 20');
     const dbScholarships = scholarshipsRes.rows;
 
     const systemPrompt = `
