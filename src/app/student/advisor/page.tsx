@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Sparkles, Send, Bot, User, Trash2, ArrowRight, HelpCircle, Info, Database,
-  Mic, MicOff, Volume2, VolumeX, GraduationCap, Wallet, BookOpen, Compass, Award
+  Mic, MicOff, Volume2, VolumeX, GraduationCap, Wallet, BookOpen, Compass, Award, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { askAIAdvisor } from '@/app/actions/advisor';
@@ -43,6 +43,8 @@ export default function AdvisorPage() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [recognitionError, setRecognitionError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -125,9 +127,12 @@ export default function AdvisorPage() {
     if (isListening) {
       if (recognitionRef.current) {
         try {
-          recognitionRef.current.stop();
+          recognitionRef.current.abort();
         } catch (e) {}
       }
+      setIsListening(false);
+      setRecognitionError(null);
+      window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
       return;
     }
 
@@ -136,43 +141,102 @@ export default function AdvisorPage() {
       window.speechSynthesis.cancel();
     }
     setIsSpeaking(false);
+    setInterimTranscript('');
+    setRecognitionError(null);
+
+    // Clean up any stale instances
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+
+    // Fire external voice start event to pause global chatbot listening
+    window.dispatchEvent(new CustomEvent('nexa-voice-start'));
 
     const rec = new SpeechRecognition();
     rec.continuous = false;
-    rec.interimResults = false;
+    rec.interimResults = true;
     rec.lang = 'en-US';
 
     rec.onstart = () => {
       setIsListening(true);
     };
 
+    let lastRecognizedText = '';
     rec.onresult = (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      if (transcript.trim()) {
-        handleSendMessage(transcript);
+      let interimTranscriptText = '';
+      let finalTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscriptText += event.results[i][0].transcript;
+        }
+      }
+      const displayText = finalTranscript || interimTranscriptText;
+      if (displayText.trim()) {
+        lastRecognizedText = displayText;
+        setInterimTranscript(displayText);
       }
     };
 
     rec.onerror = (event: any) => {
       const errType = event?.error;
-      if (errType === 'no-speech' || errType === 'aborted') {
-        console.log(`[Advisor STT] Info: ${errType}`);
-      } else {
-        console.warn('Speech recognition warning:', event);
+      console.warn('[Advisor STT] Error:', errType, event);
+      
+      let friendlyError = 'An error occurred during speech recognition.';
+      if (errType === 'no-speech') {
+        friendlyError = 'No speech was detected. Please try speaking closer to your microphone.';
+      } else if (errType === 'not-allowed') {
+        friendlyError = 'Microphone permission was denied. Please allow microphone access in your browser settings.';
+      } else if (errType === 'aborted') {
+        friendlyError = 'Speech recognition was cancelled.';
+      } else if (errType === 'network') {
+        friendlyError = 'A network error occurred. Please check your internet connection.';
       }
-      setIsListening(false);
+
+      setRecognitionError(friendlyError);
+      window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
+
+      // If it's a real error, show it for 3 seconds, then close overlay
+      if (errType !== 'aborted') {
+        setTimeout(() => {
+          setIsListening(false);
+          setRecognitionError(null);
+        }, 3000);
+      } else {
+        setIsListening(false);
+        setRecognitionError(null);
+      }
     };
 
     rec.onend = () => {
-      setIsListening(false);
+      // Small timeout to allow state synchronization
+      setTimeout(() => {
+        setIsListening(prev => {
+          // If we had an error, keep it visible for the timeout instead of auto-closing
+          if (recognitionError) return prev;
+          
+          window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
+          // Auto-submit if we captured speech and are closing normally
+          if (lastRecognizedText.trim()) {
+            handleSendMessage(lastRecognizedText);
+          }
+          return false;
+        });
+      }, 100);
     };
 
     recognitionRef.current = rec;
     try {
       rec.start();
     } catch (e) {
-      console.error(e);
+      console.error('[Advisor STT] Failed to start:', e);
+      setRecognitionError('Failed to initialize microphone.');
       setIsListening(false);
+      window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
     }
   };
 
@@ -186,6 +250,7 @@ export default function AdvisorPage() {
 
     // Stop listening/speaking modes
     setIsListening(false);
+    window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -240,6 +305,119 @@ export default function AdvisorPage() {
 
   return (
     <div className="relative min-h-[calc(100vh-4rem)] bg-slate-50 overflow-hidden py-10 px-4 sm:px-6 lg:px-8">
+      {/* Google-style Speech Listening Overlay */}
+      <AnimatePresence>
+        {isListening && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/70 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white p-8 rounded-3xl border border-teal-500/20 max-w-md w-full mx-4 shadow-2xl flex flex-col items-center text-center relative overflow-hidden"
+            >
+              {/* Top Accent bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-teal-500 via-cyan-400 to-teal-500" />
+              
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  if (recognitionRef.current) {
+                    recognitionRef.current.abort();
+                  }
+                  setIsListening(false);
+                  window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
+                }}
+                className="absolute top-4 right-4 p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              {/* Pulsing Google-style Voice Indicator */}
+              <div className="relative my-8 flex items-center justify-center">
+                {/* Voice rings */}
+                <span className="absolute w-24 h-24 rounded-full bg-teal-500/20 animate-ping" />
+                <span className="absolute w-32 h-32 rounded-full bg-cyan-500/10 animate-pulse [animation-duration:1.5s]" />
+                
+                <div className="w-16 h-16 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500 flex items-center justify-center text-white shadow-xl relative z-10">
+                  <Mic className="h-8 w-8 animate-pulse" />
+                </div>
+              </div>
+
+              <h3 className="text-md font-black text-slate-900 uppercase tracking-wider mb-2">
+                Listening to you...
+              </h3>
+              
+              <p className="text-[11px] text-slate-500 mb-6 font-semibold">
+                Speak now. Nexa will transcribe your voice in real time.
+              </p>
+
+              {/* Live transcript text box / Error display */}
+              {recognitionError ? (
+                <div className="my-4 p-4 bg-rose-50 border border-rose-100 rounded-2xl text-xs font-bold text-rose-700 w-full animate-shake">
+                  {recognitionError}
+                </div>
+              ) : (
+                <div className="min-h-[100px] w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl flex items-center justify-center">
+                  <p className="text-xs font-bold text-slate-800 leading-relaxed italic">
+                    {interimTranscript || "Say something like: 'What are the visa requirements for Germany?'"}
+                  </p>
+                </div>
+              )}
+
+              {/* Waveform graphic */}
+              <div className="flex items-center gap-1.5 justify-center mt-6 h-6">
+                {[...Array(9)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className="w-1 bg-gradient-to-t from-teal-500 to-cyan-500 rounded-full"
+                    animate={{
+                      height: [6, 24, 6]
+                    }}
+                    transition={{
+                      duration: 0.5,
+                      repeat: Infinity,
+                      delay: i * 0.05,
+                      ease: "easeInOut"
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-4 w-full mt-8">
+                <button
+                  onClick={() => {
+                    if (recognitionRef.current) {
+                      recognitionRef.current.abort();
+                    }
+                    setIsListening(false);
+                    window.dispatchEvent(new CustomEvent('nexa-voice-stop'));
+                  }}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl transition-all cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (interimTranscript.trim()) {
+                      handleSendMessage(interimTranscript);
+                    }
+                  }}
+                  className="flex-grow py-3 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-extrabold rounded-xl transition-all cursor-pointer text-xs shadow-md"
+                  disabled={!interimTranscript.trim()}
+                >
+                  Submit Query
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Dynamic Background visual blobs */}
       <div className="absolute top-10 left-1/4 w-[300px] h-[300px] bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[350px] h-[350px] bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none" />

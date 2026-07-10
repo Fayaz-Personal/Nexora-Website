@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { LogOut, Menu, User, X } from 'lucide-react';
 import { UserSession, logoutUser } from '@/app/actions/auth';
 import { getStudentProfile } from '@/app/actions/student';
+import { getUniAdminDetails } from '@/app/actions/uniAdmin';
 
 
 interface NavbarProps {
@@ -30,6 +31,14 @@ export default function Navbar({ user }: NavbarProps) {
         if (p) {
           setProfile(p);
         }
+      } else if (user && user.role === 'uni_admin') {
+        const details = await getUniAdminDetails();
+        if (details && details.university) {
+          setProfile({
+            avatar_url: details.university.logo_url,
+            name: details.university.name
+          });
+        }
       }
     }
     fetchProfile();
@@ -45,47 +54,57 @@ export default function Navbar({ user }: NavbarProps) {
     if (!user) return '/auth';
     if (user.role === 'platform_admin') return '/platform-admin/dashboard';
     if (user.role === 'uni_admin') return '/uni-admin/dashboard';
+    if (user.role === 'business') return '/business/dashboard';
     return '/student/dashboard';
   };
 
-  const linkClass = isHome
-    ? "text-sm font-medium text-slate-800 hover:text-teal-dark transition-colors"
+  const isStudentHome = user?.role === 'student' && isHome;
+
+  const navClass = isStudentHome
+    ? "fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 border-slate-200/80 bg-white/95 backdrop-blur-md shadow-sm"
+    : "fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 border-teal-700 bg-[#00A896]";
+
+  const logoTextClass = isStudentHome
+    ? "text-xl tracking-tight font-extrabold transition-colors text-slate-900"
+    : "text-xl tracking-tight font-extrabold transition-colors text-white";
+
+  const logoContainerClass = isStudentHome
+    ? "rounded-xl overflow-hidden border border-slate-250 shadow-sm flex items-center justify-center bg-slate-100 shrink-0"
+    : "rounded-xl overflow-hidden border border-slate-200/20 shadow-sm flex items-center justify-center bg-black/20 shrink-0";
+
+  const linkClass = isStudentHome
+    ? "text-sm font-semibold text-slate-650 hover:text-[#00A896] transition-colors"
     : "text-sm font-medium text-white/90 hover:text-white transition-colors";
 
-  const mobileLinkClass = isHome
-    ? "block rounded-md px-3 py-2 text-base font-medium text-slate-800 hover:bg-slate-50 hover:text-teal-dark"
+  const mobileLinkClass = isStudentHome
+    ? "block rounded-md px-3 py-2 text-base font-semibold text-slate-700 hover:bg-slate-100 hover:text-slate-900"
     : "block rounded-md px-3 py-2 text-base font-medium text-white hover:bg-teal-700 hover:text-white";
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${
-      isHome 
-        ? 'border-slate-200 bg-white/90 backdrop-blur-md' 
-        : 'border-teal-700 bg-[#00A896]'
-    }`}>
+    <nav className={navClass}>
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <div className="flex items-center">
             <Link href="/" className="flex items-center gap-2 font-bold flex-row align-middle">
-              <div className="rounded-xl overflow-hidden border border-slate-200/20 shadow-sm flex items-center justify-center bg-black/20 shrink-0">
-                <Image 
+              <div className={logoContainerClass} style={{ width: '36px', height: '36px' }}>
+                <img 
                   src="/images/logo.png" 
                   alt="Nexora Logo" 
-                  width={36} 
-                  height={36} 
+                  width={36}
+                  height={36}
                   className="h-9 w-9 object-cover" 
+                  style={{ width: '36px', height: '36px' }}
                 />
               </div>
-              <span className={`text-xl tracking-tight font-extrabold transition-colors ${
-                isHome ? 'text-slate-900' : 'text-white'
-              }`}>
+              <span className={logoTextClass}>
                 Nexora
               </span>
             </Link>
           </div>
 
           {/* Navigation Links - Desktop */}
-          {user && !isOnboarding && (
+          {user && user.role === 'student' && !isOnboarding && (
             <div className="hidden md:block">
               <div className="ml-10 flex items-center space-x-6">
                 <Link href="/" className={linkClass}>
@@ -146,8 +165,8 @@ export default function Navbar({ user }: NavbarProps) {
                   type="button"
                   onClick={() => setDropdownOpen(!dropdownOpen)}
                   className={`flex items-center gap-2 rounded-full border p-1.5 transition-all cursor-pointer shadow-sm focus:outline-none ${
-                    isHome 
-                      ? 'border-slate-350 hover:border-teal-dark bg-white text-slate-800' 
+                    isStudentHome 
+                      ? 'border-slate-200 hover:border-slate-350 bg-slate-50 text-slate-800' 
                       : 'border-white/30 hover:border-white bg-[#00A896]/80 text-white'
                   }`}
                   title="View Profile Details"
@@ -159,9 +178,7 @@ export default function Navbar({ user }: NavbarProps) {
                       className="h-6 w-6 rounded-full object-cover shrink-0"
                     />
                   ) : (
-                    <div className={`rounded-full p-1 shrink-0 ${
-                      isHome ? 'bg-teal-dark/10 text-teal-dark' : 'bg-white/20 text-white'
-                    }`}>
+                    <div className={`rounded-full p-1 shrink-0 ${isStudentHome ? 'bg-slate-200 text-slate-700' : 'bg-white/20 text-white'}`}>
                       <User className="h-4 w-4" />
                     </div>
                   )}
@@ -188,20 +205,22 @@ export default function Navbar({ user }: NavbarProps) {
                         <span className="text-sm font-extrabold text-slate-900 block truncate mt-0.5">{user.name}</span>
                         <span className="text-xs text-slate-500 block truncate">{user.email}</span>
                         <span className="inline-block mt-1 text-[9px] font-extrabold uppercase bg-slate-100 text-slate-650 px-2 py-0.5 rounded-lg border border-slate-200">
-                          {user.role === 'student' ? 'Student' : user.role === 'uni_admin' ? 'University Admin' : 'Platform Admin'}
+                          {user.role === 'student' ? 'Student' : user.role === 'uni_admin' ? 'University Admin' : user.role === 'business' ? 'Business Partner' : 'Platform Admin'}
                         </span>
                       </div>
                     </div>
 
                     <div className="flex flex-col gap-2 pt-1">
                       <Link
-                        href={getDashboardLink()}
+                        href={user.role === 'uni_admin' ? '/' : getDashboardLink()}
                         onClick={() => setDropdownOpen(false)}
                         className="w-full text-center py-2.5 bg-gradient-teal-sunrise text-slate-900 font-extrabold text-xs rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer block"
                       >
                         {user.role === 'student' && !profile?.onboarding_completed 
                           ? 'Complete Onboarding' 
-                          : 'Go to Dashboard'}
+                          : user.role === 'uni_admin' 
+                            ? 'Go to Homepage' 
+                            : 'Go to Dashboard'}
                       </Link>
                       <button
                         type="button"
@@ -228,15 +247,15 @@ export default function Navbar({ user }: NavbarProps) {
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 className={`inline-flex items-center justify-center rounded-md p-2 focus:outline-none ${
-                  isHome 
-                    ? 'text-teal-dark hover:bg-slate-100' 
+                  isStudentHome 
+                    ? 'text-slate-800 hover:bg-slate-105 hover:text-slate-950' 
                     : 'text-white hover:bg-teal-700'
                 }`}
               >
                 {mobileMenuOpen ? (
-                  <X className={`h-6 w-6 ${isHome ? 'text-slate-900' : 'text-white'}`} />
+                  <X className={`h-6 w-6 ${isStudentHome ? 'text-slate-800' : 'text-white'}`} />
                 ) : (
-                  <Menu className={`h-6 w-6 ${isHome ? 'text-slate-900' : 'text-white'}`} />
+                  <Menu className={`h-6 w-6 ${isStudentHome ? 'text-slate-800' : 'text-white'}`} />
                 )}
               </button>
             </div>
@@ -247,9 +266,9 @@ export default function Navbar({ user }: NavbarProps) {
       {/* Mobile Menu */}
       {mobileMenuOpen && user && !isOnboarding && (
         <div className={`md:hidden border-b px-2 pt-2 pb-3 space-y-1 sm:px-3 ${
-          isHome 
-            ? 'border-slate-200 bg-white/95' 
-            : 'border-teal-700 bg-[#00A896]'
+          isStudentHome 
+            ? 'border-slate-200 bg-white/95 backdrop-blur-md shadow-sm text-slate-800' 
+            : 'border-teal-700 bg-[#00A896] text-white'
         }`}>
           <Link
             href="/"
@@ -258,86 +277,92 @@ export default function Navbar({ user }: NavbarProps) {
           >
             Home
           </Link>
-          <Link
-            href="/student/universities"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Universities
-          </Link>
-          <Link
-            href="/student/scholarships"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Scholarships
-          </Link>
-          <Link
-            href="/student/advisor"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            AI Advisor
-          </Link>
-          <Link
-            href="/student/cost-calculator"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Calculator
-          </Link>
-          <Link
-            href="/student/sop-analyzer"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            SOP Analyzer
-          </Link>
-          <Link
-            href="/student/accommodations"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Accommodation
-          </Link>
-          <Link
-            href="/student/visa"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Visa Guidance
-          </Link>
-          <Link
-            href="/student/travel"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Travel Planner
-          </Link>
-          <Link
-            href="/student/loans"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            Study Loans
-          </Link>
-          <Link
-            href="/student/recommendations"
-            onClick={() => setMobileMenuOpen(false)}
-            className={mobileLinkClass}
-          >
-            AI Predictor & Matcher
-          </Link>
+          {user.role === 'student' && (
+            <>
+              <Link
+                href="/student/universities"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Universities
+              </Link>
+              <Link
+                href="/student/scholarships"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Scholarships
+              </Link>
+              <Link
+                href="/student/advisor"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                AI Advisor
+              </Link>
+              <Link
+                href="/student/cost-calculator"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Calculator
+              </Link>
+              <Link
+                href="/student/sop-analyzer"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                SOP Analyzer
+              </Link>
+              <Link
+                href="/student/accommodations"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Accommodation
+              </Link>
+              <Link
+                href="/student/visa"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Visa Guidance
+              </Link>
+              <Link
+                href="/student/travel"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Travel Planner
+              </Link>
+              <Link
+                href="/student/loans"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                Study Loans
+              </Link>
+              <Link
+                href="/student/recommendations"
+                onClick={() => setMobileMenuOpen(false)}
+                className={mobileLinkClass}
+              >
+                AI Predictor & Matcher
+              </Link>
+            </>
+          )}
           {user ? (
-            <div className={`border-t pt-4 mt-2 ${isHome ? 'border-slate-200' : 'border-teal-700'}`}>
+            <div className={`border-t pt-4 mt-2 ${isStudentHome ? 'border-slate-200' : 'border-teal-700'}`}>
               <Link
                 href={getDashboardLink()}
                 onClick={() => setMobileMenuOpen(false)}
                 className={`block rounded-md px-3 py-2 text-base font-medium ${
-                  isHome ? 'text-teal-dark hover:bg-slate-50' : 'text-white hover:bg-teal-700'
+                  isStudentHome 
+                    ? 'text-slate-800 hover:bg-slate-105 hover:text-slate-950' 
+                    : 'text-white hover:bg-teal-700'
                 }`}
               >
-                Dashboard ({user.name})
+                Dashboard ({user.name || user.email})
               </Link>
               <button
                 onClick={() => {
@@ -345,21 +370,19 @@ export default function Navbar({ user }: NavbarProps) {
                   handleLogout();
                 }}
                 className={`w-full text-left block rounded-md px-3 py-2 text-base font-medium ${
-                  isHome ? 'text-rose-700 hover:bg-slate-50' : 'text-rose-200 hover:bg-teal-700 hover:text-white'
+                  isStudentHome 
+                    ? 'text-rose-600 hover:bg-rose-50' 
+                    : 'text-rose-200 hover:bg-teal-700 hover:text-white'
                 }`}
               >
-                Logout
+                <span>Logout</span>
               </button>
             </div>
           ) : (
             <Link
               href="/auth"
               onClick={() => setMobileMenuOpen(false)}
-              className={`block rounded-md px-3 py-2 text-center text-base font-semibold border ${
-                isHome 
-                  ? 'border-teal-dark text-teal-dark hover:bg-teal-dark hover:text-white' 
-                  : 'border-white text-white hover:bg-white hover:text-[#00A896]'
-              } mt-4`}
+              className="block rounded-md px-3 py-2 text-center text-base font-semibold border border-white text-white hover:bg-white hover:text-[#00A896] mt-4"
             >
               Sign In
             </Link>

@@ -41,11 +41,20 @@ export async function getBusinessDashboardData() {
 
     const countries = await query('SELECT id, name FROM countries ORDER BY name ASC');
 
+    const bookings = await query(`
+      SELECT rb.*, sp.name as student_name, a.title as property_title, a.business_id
+      FROM room_bookings rb
+      JOIN student_profiles sp ON rb.student_id = sp.id
+      JOIN accommodations a ON rb.accommodation_id = a.id
+      ORDER BY rb.created_at DESC
+    `);
+
     return {
       accommodations: accommodations.rows,
       visas: visas.rows,
       flights: flights.rows,
-      countries: countries.rows
+      countries: countries.rows,
+      bookings: bookings.rows
     };
   } catch (error) {
     console.error('Error fetching business dashboard data:', error);
@@ -65,9 +74,25 @@ export async function saveAccommodation(data: {
   facilities: string[];
   title: string;
   description: string;
+  address?: string;
+  mobileNumber?: string;
+  website?: string;
+  totalRooms?: number;
+  roomInfoJson?: any;
+  images?: string[];
+  videos?: string[];
 }) {
   try {
-    await verifyBusinessOrAdmin();
+    const user = await verifyBusinessOrAdmin();
+    
+    // Fetch business profile if user is a business partner
+    let businessId = null;
+    if (user.role === 'business') {
+      const bRes = await query('SELECT id FROM business_profiles WHERE user_id = $1', [user.id]);
+      if (bRes.rows.length > 0) {
+        businessId = bRes.rows[0].id;
+      }
+    }
 
     if (data.id) {
       // Update
@@ -75,22 +100,34 @@ export async function saveAccommodation(data: {
         UPDATE accommodations 
         SET country_id = $1, city_name = $2, type = $3, rent = $4, 
             distance_to_univ = $5, availability = $6, facilities = $7, 
-            title = $8, description = $9
-        WHERE id = $10
+            title = $8, description = $9, address = $10, mobile_number = $11,
+            website = $12, total_rooms = $13, room_info_json = $14,
+            images = $15, videos = $16,
+            available_rooms = CASE WHEN available_rooms IS NULL THEN $13 ELSE available_rooms + ($13 - COALESCE(total_rooms, 0)) END
+        WHERE id = $17 AND ($18::integer IS NULL OR business_id = $18)
       `, [
         data.countryId, data.cityName, data.type, data.rent,
         data.distanceToUniv, data.availability, data.facilities,
-        data.title, data.description, data.id
+        data.title, data.description, data.address || '', data.mobileNumber || '',
+        data.website || '', data.totalRooms || 1, JSON.stringify(data.roomInfoJson || {}),
+        data.images || [], data.videos || [],
+        data.id, businessId
       ]);
     } else {
       // Insert
       await query(`
-        INSERT INTO accommodations (country_id, city_name, type, rent, distance_to_univ, availability, facilities, title, description)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO accommodations (
+          country_id, city_name, type, rent, distance_to_univ, availability, 
+          facilities, title, description, business_id, address, mobile_number,
+          website, total_rooms, available_rooms, room_info_json, images, videos
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14, $15, $16, $17)
       `, [
         data.countryId, data.cityName, data.type, data.rent,
         data.distanceToUniv, data.availability, data.facilities,
-        data.title, data.description
+        data.title, data.description, businessId, data.address || '',
+        data.mobileNumber || '', data.website || '', data.totalRooms || 1,
+        JSON.stringify(data.roomInfoJson || {}), data.images || [], data.videos || []
       ]);
     }
 

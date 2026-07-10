@@ -266,7 +266,7 @@ const NexaGlobe = ({
         if (isDragging) return;
         onClick();
       }}
-      className={`fixed bottom-6 right-6 z-50 cursor-pointer ${
+      className={`fixed bottom-6 right-6 z-40 cursor-pointer ${
         isOpen ? 'pointer-events-none opacity-0' : 'pointer-events-auto opacity-100'
       }`}
       style={{ touchAction: 'none' }}
@@ -570,6 +570,7 @@ export default function AIChatbot() {
   const [isListeningForSpeech, setIsListeningForSpeech] = useState(false);
   const recognitionRef = useRef<any>(null);
   const hasNotAllowedErrorRef = useRef(false);
+  const [isExternalListening, setIsExternalListening] = useState(false);
   const [wakeWordRestartToken, setWakeWordRestartToken] = useState(0);
 
   // References to keep hooks stable
@@ -580,6 +581,17 @@ export default function AIChatbot() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    const handleVoiceStart = () => setIsExternalListening(true);
+    const handleVoiceStop = () => setIsExternalListening(false);
+    window.addEventListener('nexa-voice-start', handleVoiceStart);
+    window.addEventListener('nexa-voice-stop', handleVoiceStop);
+    return () => {
+      window.removeEventListener('nexa-voice-start', handleVoiceStart);
+      window.removeEventListener('nexa-voice-stop', handleVoiceStop);
+    };
+  }, []);
 
   useEffect(() => {
     profileRef.current = profile;
@@ -730,7 +742,7 @@ export default function AIChatbot() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
-    if (!isWakeWordMode || isSpeaking || isListeningForSpeech) {
+    if (!isWakeWordMode || isSpeaking || isListeningForSpeech || isExternalListening) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -804,7 +816,7 @@ export default function AIChatbot() {
         recognitionRef.current = null;
       }
     };
-  }, [isWakeWordMode, isSpeaking, isListeningForSpeech, playWakeChime, triggerVoiceQueryListening, wakeWordRestartToken]);
+  }, [isWakeWordMode, isSpeaking, isListeningForSpeech, isExternalListening, playWakeChime, triggerVoiceQueryListening, wakeWordRestartToken]);
 
   // Smooth character wandering bounded by viewport
   useEffect(() => {
@@ -931,9 +943,9 @@ export default function AIChatbot() {
           setRecommendations(data.recommendations);
           setIsLoggedIn(true);
           if (data.profile.onboarding_completed) {
-            speakText(`Hi ${data.profile.name || 'Student'}! I am Nexa, your AI Globe Navigator. You are ${data.readiness.total}% ready for studies in ${data.profile.preferred_countries[0] || 'Germany'}.`);
+            speakText(`Hi ${data.profile.name || 'Student'}! Welcome to Nexora, your smart AI-powered higher studies guidance platform. I am Nexa, your AI advisor. Nexora simplifies your global education journey by matching your profile with top universities, calculating eligibility, and organizing your visa checklist. Let's start building your global study roadmap together!`);
           } else {
-            speakText(`Hi ${data.profile.name || 'Student'}! I am Nexa, your AI Globe Navigator. Welcome to Nexora. Let's complete your academic onboarding!`);
+            speakText(`Hi ${data.profile.name || 'Student'}! Welcome to Nexora, your smart AI-powered higher studies guidance platform. I am Nexa, your AI advisor. Let's complete your academic onboarding so we can start matching you with global universities and visa checklists!`);
           }
         } else {
           // Guest mode fallback

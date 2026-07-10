@@ -3,6 +3,8 @@
 import { query } from '@/db';
 import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from './auth';
+import fs from 'fs';
+import path from 'path';
 
 // Interface definitions
 export interface University {
@@ -19,6 +21,8 @@ export interface University {
   website: string;
   is_saved?: boolean;
   country_currency?: string;
+  application_procedure?: string;
+  eligibility_requirements?: string;
 }
 
 export interface Course {
@@ -34,6 +38,8 @@ export interface Course {
   description: string;
   is_saved?: boolean;
   country_currency?: string;
+  application_procedure?: string;
+  eligibility_requirements?: string;
 }
 
 export interface Scholarship {
@@ -50,6 +56,16 @@ export interface Scholarship {
 }
 
 // 1. Get Universities
+export async function getUniversitiesWithScholarships(): Promise<string[]> {
+  try {
+    const res = await query("SELECT DISTINCT provider FROM scholarships WHERE type = 'university'");
+    return res.rows.map(r => r.provider);
+  } catch (error) {
+    console.error('Error in getUniversitiesWithScholarships:', error);
+    return [];
+  }
+}
+
 export async function getUniversities(filters: {
   country?: string;
   degree?: string;
@@ -126,7 +142,7 @@ export async function getCourses(filters: {
 }, studentProfileId?: number): Promise<Course[]> {
   try {
     let sql = `
-      SELECT c.*, u.name as university_name, co.name as country_name, co.currency as country_currency
+      SELECT c.*, u.name as university_name, u.application_procedure, u.eligibility_requirements, co.name as country_name, co.currency as country_currency
       FROM courses c
       JOIN universities u ON c.university_id = u.id
       JOIN countries co ON u.country_id = co.id
@@ -160,7 +176,7 @@ export async function getCourses(filters: {
     }
 
     if (filters.search) {
-      sql += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex})`;
+      sql += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex} OR u.name ILIKE $${paramIndex})`;
       params.push(`%${filters.search}%`);
       paramIndex++;
     }
@@ -386,13 +402,63 @@ export async function updateStudentProfile(profileId: number, data: {
   try {
     const predictedCurrency = getCurrencyFromNationality(data.nationality);
 
+    // Fetch existing onboarding data and skills to compute new scores dynamically
+    const profileRes = await query('SELECT onboarding_data, skills FROM student_profiles WHERE id = $1', [profileId]);
+    const currentProfile = profileRes.rows[0];
+    const onboardingData = currentProfile?.onboarding_data ? JSON.parse(JSON.stringify(currentProfile.onboarding_data)) : {};
+    const skills = currentProfile?.skills || [];
+    const exams = onboardingData.exams || {};
+    const budgetRange = onboardingData.budgetRange || '';
+
+    // Calculate dynamic scores based on updated CGPA, budget, etc.
+    const cgpa = Number(data.cgpa) || 3.0;
+
+    // AI Readiness Score: based on CGPA and exam presence
+    let readiness = 45;
+    if (cgpa >= 3.8) readiness += 25;
+    else if (cgpa >= 3.5) readiness += 15;
+    else if (cgpa >= 3.0) readiness += 5;
+
+    if (skills.length > 3) readiness += 15;
+    if (exams.gre && exams.gre !== 'Not Attempted') readiness += 10;
+    if (exams.ielts && exams.ielts !== 'Not Attempted') readiness += 5;
+    readiness = Math.min(100, readiness);
+
+    // Scholarship Score: higher CGPA, low budget means higher eligibility
+    let scholarshipScore = 40;
+    if (cgpa >= 3.7) scholarshipScore += 30;
+    else if (cgpa >= 3.3) scholarshipScore += 15;
+    if (onboardingData.needScholarship === 'Yes') scholarshipScore += 20;
+    if (budgetRange === 'Below ₹10 Lakhs') scholarshipScore += 10;
+    scholarshipScore = Math.min(100, scholarshipScore);
+
+    // Admission Strength: skills, exam scores, work experience
+    let strength = 50;
+    if (cgpa >= 3.8) strength += 20;
+    if (skills.length > 5) strength += 10;
+    if (onboardingData.workExperience && onboardingData.workExperience > 0) strength += 15;
+    strength = Math.min(100, strength);
+
+    let eligibility = Math.round((readiness + scholarshipScore + strength) / 3);
+
+    // Update onboarding_data with updated profile info to keep it in sync
+    onboardingData.name = data.name;
+    onboardingData.cgpa = data.cgpa;
+    onboardingData.budget = data.budget;
+    onboardingData.nationality = data.nationality;
+    onboardingData.currentCountry = data.currentCountry;
+    onboardingData.linkedinUrl = data.linkedinUrl;
+    onboardingData.githubUrl = data.githubUrl;
+    onboardingData.portfolioUrl = data.portfolioUrl;
+
     await query(`
       UPDATE student_profiles
       SET name = $1, degree = $2, department = $3, cgpa = $4, budget = $5,
           linkedin_url = $6, github_url = $7, portfolio_url = $8,
           nationality = $9, current_country = $10, preferred_currency = $11,
-          avatar_url = $12
-      WHERE id = $13
+          avatar_url = $12, ai_readiness_score = $13, scholarship_eligibility_score = $14,
+          admission_strength_score = $15, eligibility_score = $16, onboarding_data = $17
+      WHERE id = $18
     `, [
       data.name,
       data.degree,
@@ -406,20 +472,13 @@ export async function updateStudentProfile(profileId: number, data: {
       data.currentCountry,
       predictedCurrency,
       data.avatarUrl || null,
+      readiness,
+      scholarshipScore,
+      strength,
+      eligibility,
+      JSON.stringify(onboardingData),
       profileId
     ]);
-
-    // Update eligibility score based on criteria: cgpa and budget
-    let eligibility = 50;
-    if (data.cgpa >= 3.8) eligibility += 30;
-    else if (data.cgpa >= 3.5) eligibility += 20;
-    else if (data.cgpa >= 3.0) eligibility += 10;
-
-    if (data.budget >= 25000) eligibility += 10;
-
-    eligibility = Math.min(100, eligibility);
-
-    await query('UPDATE student_profiles SET eligibility_score = $1 WHERE id = $2', [eligibility, profileId]);
 
     // Recalculate predictions for all bookmarked/saved universities
     const savedUnivs = await query('SELECT university_id FROM student_saved_universities WHERE student_id = $1', [profileId]);
@@ -624,15 +683,48 @@ export async function calculateAndSavePrediction(studentId: number, universityId
 
     if (!student || !univ) return;
 
-    // 3. Compute probability
+    // 3. Compute probability dynamically using student's GPA and university eligibility requirements
     let prob = Number(univ.acceptance_rate) || 50;
 
-    // CGPA weight
+    // Parse minimum GPA requirement heuristically (default to 3.0 if not found)
+    let minGpa = 3.0;
+    const gpaRegex = /(?:gpa|cgpa)\s*(?:req|reqs|requirement|requirements)?\s*(?:of|is|at\s*least|min|minimum)?\s*(?:>=|:|>)?\s*([0-9]\.[0-9]+)/i;
+    const match = univ.eligibility_requirements?.match(gpaRegex);
+    if (match) {
+      minGpa = parseFloat(match[1]);
+    }
+
     const gpa = Number(student.cgpa) || 3.0;
-    if (gpa >= 3.8) prob += 25;
-    else if (gpa >= 3.5) prob += 15;
-    else if (gpa >= 3.0) prob += 5;
-    else prob -= 20;
+    if (gpa >= minGpa) {
+      // Student meets requirement, add bonus points
+      const diff = gpa - minGpa;
+      prob += 10 + Math.min(20, Math.round(diff * 30));
+    } else {
+      // Student falls short of minimum requirement, apply penalty
+      const diff = minGpa - gpa;
+      prob -= 20 + Math.min(30, Math.round(diff * 50));
+    }
+
+    // Heuristically extract and check IELTS/TOEFL requirements if mentioned in requirements text
+    let reqIelts = 6.0;
+    const ieltsMatch = univ.eligibility_requirements?.match(/ielts\s*(?:of|is|min|minimum)?\s*(?:>=|:|>)?\s*([0-9]\.[0-9]+)/i);
+    if (ieltsMatch) {
+      reqIelts = parseFloat(ieltsMatch[1]);
+    }
+
+    const onboarding = student.onboarding_data ? JSON.parse(JSON.stringify(student.onboarding_data)) : {};
+    const studentExams = onboarding.exams || {};
+
+    if (studentExams.ielts && studentExams.ielts !== 'Not Attempted') {
+      const studentIelts = parseFloat(studentExams.ielts);
+      if (!isNaN(studentIelts)) {
+        if (studentIelts >= reqIelts) {
+          prob += 5;
+        } else {
+          prob -= 15;
+        }
+      }
+    }
 
     // Ranking difficulty modifier
     const rank = Number(univ.ranking) || 100;
@@ -1312,6 +1404,775 @@ export async function recalculateStudentXpAndLevel(profileId: number) {
   }
 }
 
+// 25. Apply to Course
+export async function applyToCourse(
+  studentId: number, 
+  courseId: number, 
+  statementOfPurpose: string,
+  documents: {
+    cert10Name: string;
+    cert10Data: string;
+    cert12Name: string;
+    cert12Data: string;
+    ugName: string;
+    ugData: string;
+    tcName?: string;
+    tcData?: string;
+    migrationName?: string;
+    migrationData?: string;
+    characterName?: string;
+    characterData?: string;
+    bonafideName?: string;
+    bonafideData?: string;
+  }
+) {
+  try {
+    // Check if student already applied
+    const check = await query('SELECT id FROM student_applications WHERE student_id = $1 AND course_id = $2', [studentId, courseId]);
+    if (check.rows.length > 0) {
+      return { error: 'You have already submitted an application for this course.' };
+    }
+
+    await query(`
+      INSERT INTO student_applications (student_id, course_id, status, documents_json)
+      VALUES ($1, $2, 'pending', $3)
+    `, [studentId, courseId, JSON.stringify({
+      statement_of_purpose: statementOfPurpose,
+      cert10_name: documents.cert10Name,
+      cert10_data: documents.cert10Data,
+      cert12_name: documents.cert12Name,
+      cert12_data: documents.cert12Data,
+      ug_name: documents.ugName,
+      ug_data: documents.ugData,
+      tc_name: documents.tcName || null,
+      tc_data: documents.tcData || null,
+      migration_name: documents.migrationName || null,
+      migration_data: documents.migrationData || null,
+      character_name: documents.characterName || null,
+      character_data: documents.characterData || null,
+      bonafide_name: documents.bonafideName || null,
+      bonafide_data: documents.bonafideData || null
+    })]);
+
+    revalidatePath('/student/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error applying to course:', error);
+    return { error: error.message || 'Failed to submit application.' };
+  }
+}
+
+// 26. Submit Student Inquiry to Business
+export async function submitStudentInquiry(studentId: number, businessProfileId: number, subject: string, message: string) {
+  try {
+    await query(`
+      INSERT INTO student_inquiries (student_id, business_profile_id, subject, message, status)
+      VALUES ($1, $2, $3, $4, 'open')
+    `, [studentId, businessProfileId, subject, message]);
+
+    revalidatePath('/student/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error submitting inquiry:', error);
+    return { error: error.message || 'Failed to submit inquiry.' };
+  }
+}
+
+// 26b. Book Accommodation Room based on availability (Real-time booking with verification flow)
+export async function bookAccommodationRoom(
+  studentId: number, 
+  accommodationId: number,
+  checkInDate: string,
+  checkOutDate: string,
+  guestsCount: number,
+  totalCost: number,
+  documentUrl: string = '',
+  roomType: string = 'Single'
+) {
+  try {
+    // 1. Start transaction
+    await query('BEGIN');
+
+    // 1b. Check if the student already has an active or pending booking
+    const activeBookingRes = await query(`
+      SELECT id FROM room_bookings 
+      WHERE student_id = $1 AND status IN ('pending', 'approved', 'paid')
+      LIMIT 1
+    `, [studentId]);
+
+    if (activeBookingRes.rows.length > 0) {
+      await query('ROLLBACK');
+      return { error: 'You already have an active or pending accommodation booking request.' };
+    }
+
+    // 2. Fetch and lock accommodation details
+    const accRes = await query(`
+      SELECT availability, available_rooms, business_id, title, room_info_json 
+      FROM accommodations 
+      WHERE id = $1 
+      FOR UPDATE
+    `, [accommodationId]);
+
+    if (accRes.rows.length === 0) {
+      await query('ROLLBACK');
+      return { error: 'Property not found.' };
+    }
+
+    const house = accRes.rows[0];
+    let rooms = [];
+    try {
+      rooms = typeof house.room_info_json === 'string' 
+        ? JSON.parse(house.room_info_json) 
+        : (house.room_info_json || []);
+    } catch (e) {
+      rooms = [];
+    }
+
+    // Ensure rooms is an array. If not, wrap it as a single legacy room type.
+    if (!Array.isArray(rooms)) {
+      rooms = [{
+        roomType: rooms.roomType || 'Standard',
+        occupancy: Number(rooms.occupancy || 1),
+        gender: rooms.gender || 'Mixed',
+        rent: Number(house.rent || 0),
+        total_rooms: Number(house.total_rooms || 1),
+        available_rooms: house.available_rooms !== null ? Number(house.available_rooms) : 1
+      }];
+    }
+
+    // Find the specific room category booked
+    const roomIndex = rooms.findIndex((r: any) => r.roomType === roomType);
+    if (roomIndex === -1) {
+      await query('ROLLBACK');
+      return { error: `Room configuration type "${roomType}" not found in this listing.` };
+    }
+
+    const selectedRoom = rooms[roomIndex];
+    const roomAvailable = selectedRoom.available_rooms !== undefined ? Number(selectedRoom.available_rooms) : 1;
+
+    if (roomAvailable <= 0) {
+      await query('ROLLBACK');
+      return { error: `The selected room category "${roomType}" is fully booked.` };
+    }
+
+    // Decrement availability of the specific room category
+    rooms[roomIndex].available_rooms = roomAvailable - 1;
+    const newRoomsCount = rooms[roomIndex].available_rooms;
+
+    // Recalculate property-wide availability
+    const totalAvailableAcrossRooms = rooms.reduce((sum: number, r: any) => sum + Number(r.available_rooms || 0), 0);
+    const newAvailability = totalAvailableAcrossRooms > 0;
+
+    await query(`
+      UPDATE accommodations 
+      SET available_rooms = $1, availability = $2, room_info_json = $3 
+      WHERE id = $4
+    `, [totalAvailableAcrossRooms, newAvailability, JSON.stringify(rooms), accommodationId]);
+
+    // 4. Create booking record with status 'pending'
+    const insertRes = await query(`
+      INSERT INTO room_bookings (student_id, accommodation_id, check_in_date, check_out_date, guests_count, total_cost, status, document_url, room_type)
+      VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8)
+      RETURNING id
+    `, [studentId, accommodationId, checkInDate, checkOutDate, guestsCount, totalCost, documentUrl, roomType]);
+
+    const bookingId = insertRes.rows[0].id;
+
+    // 5. Create inquiry / booking request notification record
+    const businessProfileId = house.business_id || 1; // Fallback if legacy seed
+    const subject = `New Stay Booking Request - Booking #BK-${bookingId}`;
+    const message = `A new stay booking request has been submitted for property: "${house.title}". Selected Room configuration: ${roomType}. Check-in: ${checkInDate}, Check-out: ${checkOutDate}, Guests: ${guestsCount}. Total Cost: $${totalCost}. Please review and approve/reject this request.`;
+
+    await query(`
+      INSERT INTO student_inquiries (student_id, business_profile_id, subject, message, status)
+      VALUES ($1, $2, $3, $4, 'open')
+    `, [studentId, businessProfileId, subject, message]);
+
+    // 6. Commit
+    await query('COMMIT');
+
+    revalidatePath('/student/accommodations');
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    return { success: true, bookingId, remainingRooms: newRoomsCount };
+  } catch (error: any) {
+    await query('ROLLBACK');
+    console.error('Error booking room:', error);
+    return { error: error.message || 'Failed to complete booking request.' };
+  }
+}
 
 
+// 27. Get Student Applications
+export async function getStudentApplications(studentId: number) {
+  try {
+    const res = await query(`
+      SELECT sa.*, c.name as course_name, u.name as university_name, u.logo_url
+      FROM student_applications sa
+      JOIN courses c ON sa.course_id = c.id
+      JOIN universities u ON c.university_id = u.id
+      WHERE sa.student_id = $1
+      ORDER BY sa.created_at DESC
+    `, [studentId]);
+    return res.rows;
+  } catch (error) {
+    console.error('Error fetching student applications:', error);
+    return [];
+  }
+}
 
+// 28. Get Student Inquiries
+export async function getStudentInquiries(studentId: number) {
+  try {
+    const res = await query(`
+      SELECT si.*, bp.company_name, bp.category
+      FROM student_inquiries si
+      JOIN business_profiles bp ON si.business_profile_id = bp.id
+      WHERE si.student_id = $1
+      ORDER BY si.created_at DESC
+    `, [studentId]);
+    return res.rows;
+  } catch (error) {
+    console.error('Error fetching student inquiries:', error);
+    return [];
+  }
+}
+
+function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// 29. Get Proximity Accommodations for a University (Smart housing recommender)
+export async function getProximityAccommodationsForUniversity(universityId: number) {
+  try {
+    // 1. Fetch university details
+    const univRes = await query(`
+      SELECT u.id, u.name, u.country_id, c.name as country_name
+      FROM universities u
+      JOIN countries c ON u.country_id = c.id
+      WHERE u.id = $1
+    `, [universityId]);
+    
+    if (univRes.rows.length === 0) return [];
+    const university = univRes.rows[0];
+
+    // Get University Coordinates (real coordinates of the top seeded universities)
+    let uniLat = 48.1497; // Default: Munich
+    let uniLon = 11.5673;
+    if (university.name.includes('Stanford')) {
+      uniLat = 37.4275;
+      uniLon = -122.1697;
+    } else if (university.name.includes('Oxford')) {
+      uniLat = 51.7548;
+      uniLon = -1.2544;
+    } else if (university.name.includes('Toronto')) {
+      uniLat = 43.6629;
+      uniLon = -79.3957;
+    } else if (university.name.includes('Melbourne')) {
+      uniLat = -37.7963;
+      uniLon = 144.9614;
+    } else {
+      // Seed coordinates depending on the ID to make it deterministic
+      uniLat = 48.1 + (universityId % 5) * 0.15;
+      uniLon = 11.5 + (universityId % 5) * 0.12;
+    }
+
+    // 2. Fetch accommodations in the same country
+    const accRes = await query(`
+      SELECT a.*, c.name as country_name, c.currency as country_currency
+      FROM accommodations a
+      JOIN countries c ON a.country_id = c.id
+      WHERE a.country_id = $1
+    `, [university.country_id]);
+
+    // 3. Map accommodations and calculate travel times, distances, ratings and reviews
+    const accommodations = accRes.rows.map(acc => {
+      let accLat = Number(acc.latitude);
+      let accLon = Number(acc.longitude);
+
+      // If coordinates are missing, mock them within a close radius of the university
+      if (!accLat || !accLon) {
+        const seed = (acc.id + universityId) % 10;
+        // Mock coordinates within 0.05 degrees (~5 km) of the university
+        accLat = uniLat + (seed * 0.008 - 0.04);
+        accLon = uniLon + (((seed * 7) % 10) * 0.008 - 0.04);
+      }
+
+      // Calculate distance using Haversine
+      const distanceKm = calculateHaversineDistance(uniLat, uniLon, accLat, accLon);
+
+      // Calculate commute time based on distance
+      let commuteTime = '';
+      let commuteMin = 10;
+      if (distanceKm < 1.0) {
+        commuteMin = Math.round(distanceKm * 12); // ~12 mins per km walking
+        commuteTime = `${commuteMin} mins walk`;
+      } else if (distanceKm < 5.0) {
+        commuteMin = Math.round(distanceKm * 4); // ~4 mins per km cycling
+        commuteTime = `${commuteMin} mins cycle`;
+      } else {
+        commuteMin = Math.round(distanceKm * 2); // ~2 mins per km by transit/U-Bahn
+        commuteTime = `${commuteMin} mins by transit`;
+      }
+
+      // Rating and reviews
+      const ratings = [4.2, 4.5, 4.8, 4.9, 4.7, 4.6];
+      const reviewCounts = [12, 24, 8, 31, 15, 19];
+      const selectedRating = ratings[(acc.id + universityId) % ratings.length];
+      const selectedReviewCount = reviewCounts[(acc.id + universityId) % reviewCounts.length];
+      
+      const reviewsPool = [
+        "Very clean and close to the library!",
+        "Excellent high-speed Wi-Fi and quiet study spaces.",
+        "A bit noisy on weekends, but very convenient location.",
+        "Perfect student environment, super helpful staff.",
+        "Fully equipped kitchen and laundry services work great."
+      ];
+      
+      const selectedReviews = [
+        reviewsPool[(acc.id + universityId) % reviewsPool.length],
+        reviewsPool[(acc.id + universityId + 1) % reviewsPool.length]
+      ];
+
+      // Match Score calculation
+      let matchScore = 75;
+      if (acc.wifi) matchScore += 5;
+      if (acc.laundry) matchScore += 5;
+      if (acc.food_availability) matchScore += 5;
+      if (acc.furnished_status === 'furnished') matchScore += 5;
+      if (distanceKm < 2.0) matchScore += 5;
+      if (selectedRating >= 4.7) matchScore += 5;
+
+      return {
+        ...acc,
+        latitude: accLat,
+        longitude: accLon,
+        distance_to_univ: `${distanceKm.toFixed(1)} km`,
+        distance_km: distanceKm,
+        commute_time: commuteTime,
+        commute_min: commuteMin,
+        rating: selectedRating,
+        review_count: selectedReviewCount,
+        reviews: selectedReviews,
+        match_score: Math.min(matchScore, 100)
+      };
+    });
+
+    return accommodations;
+  } catch (error) {
+    console.error('Error fetching proximity accommodations:', error);
+    return [];
+  }
+}
+
+// 30. Get Active Travel Packages listed by Business Agencies
+export async function getActiveTravelPackages(countryName?: string) {
+  try {
+    let sql = `
+      SELECT tp.*, bp.company_name, bp.logo_url, bp.contact_info as business_contact,
+             c.name as destination_country, c2.name as departure_country
+      FROM business_travel_packages tp
+      JOIN business_profiles bp ON tp.business_id = bp.id
+      JOIN countries c ON tp.destination_country_id = c.id
+      LEFT JOIN countries c2 ON tp.departure_country_id = c2.id
+      WHERE tp.is_active = TRUE AND tp.available_seats > 0
+    `;
+    const params = [];
+    if (countryName) {
+      sql += ` AND LOWER(c.name) = LOWER($1) `;
+      params.push(countryName.trim());
+    }
+    sql += ` ORDER BY tp.ticket_cost ASC `;
+    const res = await query(sql, params);
+    return res.rows;
+  } catch (error) {
+    console.error('Error fetching active travel packages:', error);
+    return [];
+  }
+}
+
+// 31. Book Flight Package (Transacts seats and creates flight booking in database)
+export async function bookFlightPackage(
+  studentId: number,
+  packageId: number,
+  numSeats: number = 1,
+  passengerName: string = '',
+  passportNumber: string = '',
+  contactPhone: string = '',
+  documentUrl: string = '',
+  bookingDetails: any = {}
+) {
+  try {
+    // Fetch package details
+    const pkgRes = await query(`
+      SELECT tp.*, bp.id as business_profile_id, bp.company_name, c.name as destination_country
+      FROM business_travel_packages tp
+      JOIN business_profiles bp ON tp.business_id = bp.id
+      JOIN countries c ON tp.destination_country_id = c.id
+      WHERE tp.id = $1
+    `, [packageId]);
+    if (pkgRes.rows.length === 0) {
+      return { error: 'Flight package not found.' };
+    }
+    const pkg = pkgRes.rows[0];
+
+    if (pkg.available_seats < numSeats) {
+      return { error: `Only ${pkg.available_seats} seats available for this flight package.` };
+    }
+
+    // Transact: deduct seats & create booking inquiry
+    await query('BEGIN');
+
+    // Check if the student already has an active or pending flight booking
+    const activeFlightRes = await query(`
+      SELECT id FROM flight_bookings
+      WHERE student_id = $1 AND status IN ('pending', 'approved', 'paid', 'confirmed')
+      LIMIT 1
+    `, [studentId]);
+
+    if (activeFlightRes.rows.length > 0) {
+      await query('ROLLBACK');
+      return { error: 'You already have an active or pending flight booking request.' };
+    }
+
+    await query(`
+      UPDATE business_travel_packages
+      SET available_seats = available_seats - $1
+      WHERE id = $2
+    `, [numSeats, packageId]);
+
+    const totalCost = Number(pkg.ticket_cost) * numSeats;
+
+    const insertRes = await query(`
+      INSERT INTO flight_bookings (student_id, package_id, passenger_name, passport_number, contact_phone, seats_count, total_cost, document_url, status, booking_details)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9)
+      RETURNING id
+    `, [studentId, packageId, passengerName, passportNumber, contactPhone, numSeats, totalCost, documentUrl, JSON.stringify(bookingDetails)]);
+
+    const bookingId = insertRes.rows[0].id;
+
+    const subject = `New Flight Booking Request - Booking #FB-${bookingId}`;
+    const message = `Passenger ${passengerName} has requested ${numSeats} seat(s) on ${pkg.flight_info}.\nPassport: ${passportNumber}, Contact: ${contactPhone}. Total cost: $${totalCost}. Please review and approve/reject.`;
+
+    await query(`
+      INSERT INTO student_inquiries (student_id, business_profile_id, subject, message, status)
+      VALUES ($1, $2, $3, $4, 'open')
+    `, [studentId, pkg.business_profile_id, subject, message]);
+
+    await query('COMMIT');
+    revalidatePath('/student/travel');
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    return { success: true, bookingId };
+  } catch (error: any) {
+    await query('ROLLBACK');
+    console.error('Error booking flight package:', error);
+    return { error: error.message || 'Failed to book flight package.' };
+  }
+}
+
+// 32. Get Student Room Bookings
+export async function getStudentRoomBookings(studentId: number) {
+  try {
+    const res = await query(`
+      SELECT rb.*, a.title as property_title, a.address as property_address, a.type as property_type, bp.company_name as business_name, bp.contact_info as business_contact
+      FROM room_bookings rb
+      JOIN accommodations a ON rb.accommodation_id = a.id
+      LEFT JOIN business_profiles bp ON a.business_id = bp.id
+      WHERE rb.student_id = $1
+      ORDER BY rb.created_at DESC
+    `, [studentId]);
+    return res.rows;
+  } catch (error) {
+    console.error('Error fetching student room bookings:', error);
+    return [];
+  }
+}
+
+// 33. Get Student Flight Bookings
+export async function getStudentFlightBookings(studentId: number) {
+  try {
+    const res = await query(`
+      SELECT fb.*, tp.flight_info, tp.departure_country_id, tp.destination_country_id, bp.company_name as travel_agency_name,
+             c1.name as departure_country_name, c2.name as destination_country_name
+      FROM flight_bookings fb
+      JOIN business_travel_packages tp ON fb.package_id = tp.id
+      JOIN business_profiles bp ON tp.business_id = bp.id
+      LEFT JOIN countries c1 ON tp.departure_country_id = c1.id
+      LEFT JOIN countries c2 ON tp.destination_country_id = c2.id
+      WHERE fb.student_id = $1
+      ORDER BY fb.created_at DESC
+    `, [studentId]);
+    return res.rows;
+  } catch (error) {
+    console.error('Error fetching student flight bookings:', error);
+    return [];
+  }
+}
+
+// 34. Pay Accommodation Deposit
+export async function payAccommodationDeposit(bookingId: number) {
+  try {
+    await query(`
+      UPDATE room_bookings
+      SET status = 'paid'
+      WHERE id = $1 AND status = 'approved'
+    `, [bookingId]);
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error paying deposit:', error);
+    return { error: error.message || 'Failed to complete payment.' };
+  }
+}
+
+// 35. Pay Flight Ticket
+export async function payFlightTicket(bookingId: number) {
+  try {
+    const ticketNo = `NEX-FL-${Math.floor(100000 + Math.random() * 900000)}`;
+    await query(`
+      UPDATE flight_bookings
+      SET status = 'confirmed', ticket_number = $1
+      WHERE id = $2 AND status = 'approved'
+    `, [ticketNo, bookingId]);
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    return { success: true, ticketNumber: ticketNo };
+  } catch (error: any) {
+    console.error('Error paying flight ticket:', error);
+    return { error: error.message || 'Failed to complete flight ticket payment.' };
+  }
+}
+
+// 35b. Submit Student Review for Flight Package
+export async function submitFlightReview(packageId: number, studentName: string, rating: number, reviewText: string) {
+  try {
+    await query('BEGIN');
+    const pRes = await query('SELECT ratings_reviews FROM business_travel_packages WHERE id = $1 FOR UPDATE', [packageId]);
+    if (pRes.rows.length === 0) {
+      await query('ROLLBACK');
+      return { error: 'Flight package not found.' };
+    }
+    
+    let reviews = [];
+    try {
+      reviews = typeof pRes.rows[0].ratings_reviews === 'string'
+        ? JSON.parse(pRes.rows[0].ratings_reviews)
+        : (pRes.rows[0].ratings_reviews || []);
+    } catch (e) {
+      reviews = [];
+    }
+    if (!Array.isArray(reviews)) reviews = [];
+
+    reviews.push({
+      id: Date.now(),
+      student_name: studentName,
+      rating: Number(rating),
+      review_text: reviewText,
+      created_at: new Date().toISOString()
+    });
+
+    await query(`
+      UPDATE business_travel_packages
+      SET ratings_reviews = $1
+      WHERE id = $2
+    `, [JSON.stringify(reviews), packageId]);
+
+    await query('COMMIT');
+    revalidatePath('/student/travel');
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    return { success: true };
+  } catch (error: any) {
+    await query('ROLLBACK');
+    console.error('Error submitting flight review:', error);
+    return { error: error.message || 'Failed to submit review.' };
+  }
+}
+
+
+// 36. Cancel Stay/Room Booking (Student side reversal)
+export async function cancelRoomBooking(bookingId: number) {
+  try {
+    await query('BEGIN');
+    
+    // Fetch booking details
+    const bRes = await query('SELECT accommodation_id, status, room_type FROM room_bookings WHERE id = $1 FOR UPDATE', [bookingId]);
+    if (bRes.rows.length === 0) {
+      await query('ROLLBACK');
+      return { error: 'Booking not found.' };
+    }
+    const booking = bRes.rows[0];
+
+    if (booking.status === 'cancelled') {
+      await query('ROLLBACK');
+      return { error: 'Booking is already cancelled.' };
+    }
+
+    // Update status to 'cancelled'
+    await query(`
+      UPDATE room_bookings
+      SET status = 'cancelled'
+      WHERE id = $1
+    `, [bookingId]);
+
+    // Restore room availability (if it wasn't already rejected/cancelled)
+    if (booking.status !== 'rejected') {
+      const accId = booking.accommodation_id;
+      const bookedRoomType = booking.room_type || 'Single';
+      const accRes = await query('SELECT available_rooms, room_info_json FROM accommodations WHERE id = $1 FOR UPDATE', [accId]);
+      if (accRes.rows.length > 0) {
+        const house = accRes.rows[0];
+        let rooms = [];
+        try {
+          rooms = typeof house.room_info_json === 'string'
+            ? JSON.parse(house.room_info_json)
+            : (house.room_info_json || []);
+        } catch (e) {
+          rooms = [];
+        }
+
+        if (!Array.isArray(rooms)) {
+          rooms = [{
+            roomType: rooms.roomType || 'Standard',
+            occupancy: Number(rooms.occupancy || 1),
+            gender: rooms.gender || 'Mixed',
+            rent: Number(house.rent || 0),
+            total_rooms: Number(house.total_rooms || 1),
+            available_rooms: house.available_rooms !== null ? Number(house.available_rooms) : 1
+          }];
+        }
+
+        const roomIndex = rooms.findIndex((r: any) => r.roomType === bookedRoomType);
+        if (roomIndex !== -1) {
+          rooms[roomIndex].available_rooms = Number(rooms[roomIndex].available_rooms || 0) + 1;
+        }
+
+        const totalAvailableAcrossRooms = rooms.reduce((sum: number, r: any) => sum + Number(r.available_rooms || 0), 0);
+        await query(`
+          UPDATE accommodations 
+          SET available_rooms = $1, availability = true, room_info_json = $2
+          WHERE id = $3
+        `, [totalAvailableAcrossRooms, JSON.stringify(rooms), accId]);
+      }
+    }
+
+    await query('COMMIT');
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    revalidatePath('/student/accommodations');
+    return { success: true };
+  } catch (error: any) {
+    await query('ROLLBACK');
+    console.error('Error cancelling stay booking:', error);
+    return { error: error.message || 'Failed to cancel booking.' };
+  }
+}
+
+// 37. Cancel Flight Booking (Student side reversal)
+export async function cancelFlightBooking(bookingId: number) {
+  try {
+    await query('BEGIN');
+    
+    // Fetch booking details
+    const bRes = await query('SELECT package_id, seats_count, status FROM flight_bookings WHERE id = $1 FOR UPDATE', [bookingId]);
+    if (bRes.rows.length === 0) {
+      await query('ROLLBACK');
+      return { error: 'Flight booking not found.' };
+    }
+    const booking = bRes.rows[0];
+
+    if (booking.status === 'cancelled') {
+      await query('ROLLBACK');
+      return { error: 'Booking is already cancelled.' };
+    }
+
+    // Update status to 'cancelled'
+    await query(`
+      UPDATE flight_bookings
+      SET status = 'cancelled'
+      WHERE id = $1
+    `, [bookingId]);
+
+    // Restore seat availability (if not rejected)
+    if (booking.status !== 'rejected') {
+      const pkgId = booking.package_id;
+      const seats = Number(booking.seats_count || 1);
+      const pkgRes = await query('SELECT available_seats FROM business_travel_packages WHERE id = $1 FOR UPDATE', [pkgId]);
+      if (pkgRes.rows.length > 0) {
+        const availableSeats = Number(pkgRes.rows[0].available_seats || 0) + seats;
+        await query('UPDATE business_travel_packages SET available_seats = $1 WHERE id = $2', [availableSeats, pkgId]);
+      }
+    }
+
+    await query('COMMIT');
+    revalidatePath('/student/dashboard');
+    revalidatePath('/business/dashboard');
+    revalidatePath('/student/travel');
+    return { success: true };
+  } catch (error: any) {
+    await query('ROLLBACK');
+    console.error('Error cancelling flight booking:', error);
+    return { error: error.message || 'Failed to cancel flight booking.' };
+  }
+}
+
+export async function uploadDocument(formData: FormData) {
+  try {
+    const file = formData.get('file') as File;
+    if (!file) {
+      return { error: 'No file provided.' };
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'bookings');
+    
+    // Ensure directory exists
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const filename = `${Date.now()}_${file.name}`;
+    const filePath = path.join(uploadDir, filename);
+    
+    fs.writeFileSync(filePath, buffer);
+    
+    return { success: true, url: `/uploads/bookings/${filename}` };
+  } catch (error: any) {
+    console.error('Error uploading document:', error);
+    return { error: error.message || 'Failed to upload document.' };
+  }
+}
+
+// 38. Get already occupied seats for a flight package
+export async function getBookedSeatsForPackage(packageId: number) {
+  try {
+    const res = await query(`
+      SELECT booking_details FROM flight_bookings
+      WHERE package_id = $1 AND status IN ('pending', 'approved', 'paid', 'confirmed')
+    `, [packageId]);
+    
+    const booked: string[] = [];
+    for (const row of res.rows) {
+      const details = row.booking_details 
+        ? (typeof row.booking_details === 'string' ? JSON.parse(row.booking_details) : row.booking_details) 
+        : {};
+      if (details.selectedSeats && Array.isArray(details.selectedSeats)) {
+        booked.push(...details.selectedSeats);
+      }
+    }
+    return booked;
+  } catch (error) {
+    console.error('Error fetching booked seats:', error);
+    return [];
+  }
+}

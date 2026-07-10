@@ -16,7 +16,7 @@ export default function AuthPage() {
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [verifyingOtp, setVerifyingOtp] = useState(false);
-  const role = 'student';
+  const [role, setRole] = useState<'student' | 'uni_admin' | 'business'>('student');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [recoveryStep, setRecoveryStep] = useState<1 | 2>(1);
@@ -381,7 +381,23 @@ export default function AuthPage() {
               
               {/* Sign Up Fields */}
               {!isLogin && (
-                <div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700 mb-1.5 uppercase tracking-wider text-[11px]">
+                      Register As
+                    </label>
+                    <select
+                      value={role}
+                      onChange={(e) => setRole(e.target.value as any)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-3 text-sm focus:outline-none focus:border-teal-dark transition-all"
+                    >
+                      <option value="student">Student User (Explore & Plan Studies)</option>
+                      <option value="uni_admin">University User (Advertise Courses & Scholarships)</option>
+                      <option value="business">Business User (Travel, Accommodation, Loans, Visa)</option>
+                    </select>
+                  </div>
+
+                  <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1.5">
                     Full Name
                   </label>
@@ -398,7 +414,8 @@ export default function AuthPage() {
                     />
                   </div>
                 </div>
-              )}
+              </div>
+            )}
 
               {/* Hidden inputs to pass states */}
               {!isLogin && <input type="hidden" name="role" value={role} />}

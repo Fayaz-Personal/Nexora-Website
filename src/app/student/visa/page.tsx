@@ -98,7 +98,7 @@ export default function VisaPage() {
           <select
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            className="bg-teal-dark border border-teal-green/30 rounded-lg text-xs font-bold text-teal-bright p-2 focus:outline-none focus:border-yellow-green cursor-pointer"
+            className="bg-teal-dark border border-teal-green/30 rounded-lg text-xs font-bold text-white p-2 focus:outline-none focus:border-yellow-green cursor-pointer"
           >
             {countriesList.map(c => (
               <option key={c} value={c} className="bg-white text-black">

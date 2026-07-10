@@ -23,7 +23,8 @@ export default function ScholarshipsPage() {
     setLoading(true);
     const profileId = user?.profileId;
     const data = await getScholarships(profileId);
-    setScholarships(data);
+    const commonData = data.filter(sch => sch.type !== 'university');
+    setScholarships(commonData);
     setLoading(false);
   };
 
@@ -96,7 +97,6 @@ export default function ScholarshipsPage() {
             {[
               { id: 'all', label: 'All Scholarships' },
               { id: 'government', label: 'Government Grants' },
-              { id: 'university', label: 'University Funded' },
               { id: 'private', label: 'Private Fellowships' },
             ].map(tab => (
               <button

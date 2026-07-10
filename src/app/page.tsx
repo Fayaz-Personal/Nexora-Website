@@ -10,13 +10,13 @@ import {
   Calculator, GitCompare, ArrowRight, Landmark, Users, Star, Quote, Loader2, LogIn, UserPlus, Edit2
 } from 'lucide-react';
 import { getCurrentUser } from '@/app/actions/auth';
-import { getStudentProfile, getEnrolledStudentsCount } from '@/app/actions/student';
+import { getStudentProfile, getEnrolledStudentsCount, getUniversities } from '@/app/actions/student';
 import AuthPage from './auth/page';
 
 const features = [
   {
     title: 'University Search',
-    description: 'Explore 1500+ top universities worldwide. Compare rankings and acceptance rates.',
+    description: 'Explore top accredited universities worldwide. Compare rankings and acceptance rates.',
     icon: Search,
     href: '/student/universities',
     color: 'from-teal-dark to-teal-bright'
@@ -77,6 +77,8 @@ export default function HomePage() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [studentCount, setStudentCount] = useState<number>(0);
+  const [univCount, setUnivCount] = useState<number>(0);
+  const [countryCount, setCountryCount] = useState<number>(0);
 
   useEffect(() => {
     async function loadUser() {
@@ -85,6 +87,15 @@ export default function HomePage() {
         setStudentCount(count);
       } catch (err) {
         console.error('Error fetching student count:', err);
+      }
+
+      try {
+        const univList = await getUniversities({});
+        setUnivCount(univList.length);
+        const uniqueCountries = new Set(univList.map(u => u.country_name).filter(Boolean));
+        setCountryCount(uniqueCountries.size);
+      } catch (err) {
+        console.error('Error fetching university count:', err);
       }
 
       const sessionUser = await getCurrentUser();
@@ -96,11 +107,15 @@ export default function HomePage() {
             router.push('/student/onboarding');
             return;
           }
+          setUser({ ...sessionUser, name: p.name });
         } else if (sessionUser.role === 'uni_admin') {
           router.push('/uni-admin/dashboard');
           return;
         } else if (sessionUser.role === 'platform_admin') {
           router.push('/platform-admin/dashboard');
+          return;
+        } else if (sessionUser.role === 'business') {
+          router.push('/business/dashboard');
           return;
         }
       }
@@ -124,15 +139,15 @@ export default function HomePage() {
 
   const stats = [
     {
-      value: '1.5K+',
+      value: `${univCount}`,
       label: 'Universities',
-      sub: 'Worldwide',
+      sub: 'Accredited Partners',
       icon: Landmark
     },
     {
-      value: '100+',
+      value: `${countryCount}`,
       label: 'Countries',
-      sub: 'Destinations',
+      sub: 'Study Destinations',
       icon: Compass
     },
     {
@@ -175,16 +190,14 @@ export default function HomePage() {
               Study <span className="text-gradient-teal-sunrise">Anywhere.</span>
             </h1>
           </motion.div>
-
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
-            className="text-lg sm:text-xl text-slate-600 mb-10 max-w-xl leading-relaxed font-medium"
+            className="text-lg sm:text-xl text-slate-900 mb-10 max-w-xl leading-relaxed font-semibold"
           >
             Global education is now at your fingertips. Get AI-powered guidance on profile evaluation, university selection, scholarships, and visa checklist steps.
           </motion.p>
-
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { query } from '@/db';
 import { sendOtpEmail, sendPasswordResetEmail } from './email';
+import { logSecurityEvent } from '@/lib/audit';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nexora-super-secret-key-987654321';
 const COOKIE_NAME = 'nexora_session';
@@ -51,6 +52,7 @@ export async function loginUser(prevState: any, formData: FormData) {
   const password = formData.get('password') as string;
 
   if (!email || !password) {
+    await logSecurityEvent('failed_login', null, 'Login attempt with missing email or password');
     return { error: 'Email and password are required.' };
   }
 
@@ -61,6 +63,7 @@ export async function loginUser(prevState: any, formData: FormData) {
     const userRes = await query('SELECT * FROM users WHERE email = $1', [email]);
     if (userRes.rows.length === 0) {
       console.log(`[Auth] User not found: "${email}"`);
+      await logSecurityEvent('failed_login', null, `Failed login: User not found for email ${email}`);
       return { error: 'Invalid email or password.' };
     }
 
@@ -68,12 +71,14 @@ export async function loginUser(prevState: any, formData: FormData) {
     const isPasswordCorrect = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordCorrect) {
       console.log(`[Auth] Password incorrect for: "${email}"`);
+      await logSecurityEvent('failed_login', user.id, `Failed login: Incorrect password for user ${email}`);
       return { error: 'Invalid email or password.' };
     }
 
     // Check if suspended
     if (user.is_active === false) {
       console.log(`[Auth] Login blocked for suspended user: "${email}"`);
+      await logSecurityEvent('failed_login', user.id, `Failed login: Blocked suspended user account ${email}`);
       return { error: 'Your account has been suspended by the platform administrator.' };
     }
 
@@ -84,6 +89,7 @@ export async function loginUser(prevState: any, formData: FormData) {
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
       await query('UPDATE users SET otp_code = $1 WHERE id = $2', [otpCode, user.id]);
       await sendOtpEmail(user.email, otpCode);
+      await logSecurityEvent('login_attempt', user.id, `Login attempt: OTP verification sent to ${email}`);
       return {
         error: 'Your email is not verified. Please verify your identity.',
         unverified: true,
@@ -107,6 +113,8 @@ export async function loginUser(prevState: any, formData: FormData) {
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: '/'
     });
+
+    await logSecurityEvent('login_attempt', user.id, `User ${email} successfully logged in`);
 
     let onboardingCompleted = false;
     if (user.role === 'student') {
@@ -144,20 +152,30 @@ export async function registerUser(prevState: any, formData: FormData) {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Generate Verification OTP
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    if (role === 'student') {
+      // Generate Verification OTP
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Send the email first
-    await sendOtpEmail(email, otpCode);
+      // Send the email first
+      await sendOtpEmail(email, otpCode);
 
-    // Sign a temporary token containing all the registration details (expires in 15 mins)
-    const pendingToken = jwt.sign(
-      { name, email, passwordHash, role, otpCode },
-      JWT_SECRET,
-      { expiresIn: '15m' }
-    );
+      // Sign a temporary token containing all the registration details (expires in 15 mins)
+      const pendingToken = jwt.sign(
+        { name, email, passwordHash, role, otpCode },
+        JWT_SECRET,
+        { expiresIn: '15m' }
+      );
 
-    return { success: true, needsVerification: true, email, pendingToken };
+      return { success: true, needsVerification: true, email, pendingToken };
+    } else {
+      // Direct registration for university and business partners (no OTP!)
+      await query(
+        'INSERT INTO users (email, password_hash, role, is_verified) VALUES ($1, $2, $3, TRUE)',
+        [email, passwordHash, role]
+      );
+
+      return { success: true, needsVerification: false };
+    }
   } catch (error: any) {
     console.error('Registration error:', error);
     return { error: 'An error occurred during registration. Please try again.' };

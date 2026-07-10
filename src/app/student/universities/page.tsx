@@ -2,22 +2,55 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Search, Landmark, MapPin, Star, ExternalLink, BookOpen, Clock, Loader2
+  Search, Landmark, MapPin, Star, ExternalLink, BookOpen, Clock, Loader2, X, ClipboardList, Award, ShieldAlert, Check, FileText
 } from 'lucide-react';
-import { getUniversities, getCourses, toggleSaveUniversity, toggleSaveCourse, getCountries, University, Course, earnPassportStamp } from '@/app/actions/student';
+import { getUniversities, getCourses, toggleSaveUniversity, toggleSaveCourse, getCountries, University, Course, earnPassportStamp, applyToCourse, getUniversitiesWithScholarships } from '@/app/actions/student';
 import { getCurrentUser, UserSession } from '@/app/actions/auth';
 import { useCurrency } from '@/components/CurrencyContext';
+import { getUniScholarships } from '@/app/actions/uniAdmin';
 
 export default function UniversitiesPage() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState<'universities' | 'courses'>('universities');
   const [loading, setLoading] = useState(true);
 
+  // Application Modal States
+  const [isApplyModalOpen, setIsApplyModalOpen] = useState(false);
+  const [applyCourseId, setApplyCourseId] = useState<number | null>(null);
+  const [applyCourseName, setApplyCourseName] = useState('');
+  const [selectedCourseForApply, setSelectedCourseForApply] = useState<Course | null>(null);
+  const [sopText, setSopText] = useState('');
+  const [submittingApply, setSubmittingApply] = useState(false);
+
+  // Academic documents states
+  const [cert10Name, setCert10Name] = useState<string | null>(null);
+  const [cert10Data, setCert10Data] = useState<string | null>(null);
+  const [cert12Name, setCert12Name] = useState<string | null>(null);
+  const [cert12Data, setCert12Data] = useState<string | null>(null);
+  const [ugName, setUgName] = useState<string | null>(null);
+  const [ugData, setUgData] = useState<string | null>(null);
+  const [tcName, setTcName] = useState<string | null>(null);
+  const [tcData, setTcData] = useState<string | null>(null);
+  const [migrationName, setMigrationName] = useState<string | null>(null);
+  const [migrationData, setMigrationData] = useState<string | null>(null);
+  const [characterName, setCharacterName] = useState<string | null>(null);
+  const [characterData, setCharacterData] = useState<string | null>(null);
+  const [bonafideName, setBonafideName] = useState<string | null>(null);
+  const [bonafideData, setBonafideData] = useState<string | null>(null);
+
+  // Guidelines Modal States
+  const [isGuidelinesModalOpen, setIsGuidelinesModalOpen] = useState(false);
+  const [isUnivSchModalOpen, setIsUnivSchModalOpen] = useState(false);
+  const [selectedUnivForGuidelines, setSelectedUnivForGuidelines] = useState<University | null>(null);
+  const [univScholarships, setUnivScholarships] = useState<any[]>([]);
+  const [loadingUnivSch, setLoadingUnivSch] = useState(false);
+
   // Lists
   const [universities, setUniversities] = useState<University[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [countriesList, setCountriesList] = useState<{ id: number; name: string; code: string }[]>([]);
   const [displayLimit, setDisplayLimit] = useState(12);
+  const [unisWithSch, setUnisWithSch] = useState<string[]>([]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -37,6 +70,26 @@ export default function UniversitiesPage() {
     getCurrentUser().then(u => setUser(u));
     getCountries().then(list => setCountriesList(list));
   }, []);
+
+  // Load University Specific Scholarships
+  useEffect(() => {
+    async function fetchUnivScholarships() {
+      if (!selectedUnivForGuidelines) {
+        setUnivScholarships([]);
+        return;
+      }
+      setLoadingUnivSch(true);
+      try {
+        const list = await getUniScholarships(selectedUnivForGuidelines.name);
+        setUnivScholarships(list);
+      } catch (e) {
+        console.error('Error loading university scholarships:', e);
+      } finally {
+        setLoadingUnivSch(false);
+      }
+    }
+    fetchUnivScholarships();
+  }, [selectedUnivForGuidelines]);
 
   // Earn stamp if viewing Germany, Canada or Australia
   useEffect(() => {
@@ -62,13 +115,17 @@ export default function UniversitiesPage() {
     const profileId = user?.profileId;
 
     if (activeTab === 'universities') {
-      const data = await getUniversities({
-        country,
-        budgetMax: budgetMax || undefined,
-        rankingMax: rankingMax || undefined,
-        search: search || undefined
-      }, profileId);
+      const [data, schUnis] = await Promise.all([
+        getUniversities({
+          country,
+          budgetMax: budgetMax || undefined,
+          rankingMax: rankingMax || undefined,
+          search: search || undefined
+        }, profileId),
+        getUniversitiesWithScholarships()
+      ]);
       setUniversities(data);
+      setUnisWithSch(schUnis);
     } else {
       const data = await getCourses({
         degreeType: courseDegree,
@@ -86,29 +143,103 @@ export default function UniversitiesPage() {
     setDisplayLimit(12);
   }, [user, activeTab, country, rankingMax, budgetMax, courseDegree, courseDept, courseFeesMax, search]);
 
-  // Handle saving university
+  // Handle saving university optimistically
   const handleSaveUniv = async (univ: University) => {
     if (!user || !user.profileId) {
       alert('Please sign in to save universities.');
       return;
     }
     const currentlySaved = !!univ.is_saved;
-    const res = await toggleSaveUniversity(univ.id, user.profileId, currentlySaved);
-    if (res.success) {
-      setUniversities(prev => prev.map(u => u.id === univ.id ? { ...u, is_saved: !currentlySaved } : u));
+    // Optimistic Update
+    setUniversities(prev => prev.map(u => u.id === univ.id ? { ...u, is_saved: !currentlySaved } : u));
+    
+    try {
+      const res = await toggleSaveUniversity(univ.id, user.profileId, currentlySaved);
+      if (!res.success) {
+        // Revert on failure
+        setUniversities(prev => prev.map(u => u.id === univ.id ? { ...u, is_saved: currentlySaved } : u));
+        alert(res.error || 'Failed to update saved university.');
+      }
+    } catch (err) {
+      // Revert on error
+      setUniversities(prev => prev.map(u => u.id === univ.id ? { ...u, is_saved: currentlySaved } : u));
+      console.error('Error saving university:', err);
     }
   };
 
-  // Handle saving course
+  // Handle saving course optimistically
   const handleSaveCourse = async (course: Course) => {
     if (!user || !user.profileId) {
       alert('Please sign in to save courses.');
       return;
     }
     const currentlySaved = !!course.is_saved;
-    const res = await toggleSaveCourse(course.id, user.profileId, currentlySaved);
+    // Optimistic Update
+    setCourses(prev => prev.map(c => c.id === course.id ? { ...c, is_saved: !currentlySaved } : c));
+    
+    try {
+      const res = await toggleSaveCourse(course.id, user.profileId, currentlySaved);
+      if (!res.success) {
+        // Revert on failure
+        setCourses(prev => prev.map(c => c.id === course.id ? { ...c, is_saved: currentlySaved } : c));
+        alert(res.error || 'Failed to update saved course.');
+      }
+    } catch (err) {
+      // Revert on error
+      setCourses(prev => prev.map(c => c.id === course.id ? { ...c, is_saved: currentlySaved } : c));
+      console.error('Error saving course:', err);
+    }
+  };
+
+  const closeApplyModal = () => {
+    setIsApplyModalOpen(false);
+    setSopText('');
+    setCert10Name(null);
+    setCert10Data(null);
+    setCert12Name(null);
+    setCert12Data(null);
+    setUgName(null);
+    setUgData(null);
+    setTcName(null);
+    setTcData(null);
+    setMigrationName(null);
+    setMigrationData(null);
+    setCharacterName(null);
+    setCharacterData(null);
+    setBonafideName(null);
+    setBonafideData(null);
+  };
+
+  const handleApplySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !user.profileId || !applyCourseId) return;
+    if (!cert10Data || !cert12Data || !ugData) {
+      alert('Please upload all required academic documents (10th, 12th, and UG Marksheets).');
+      return;
+    }
+    setSubmittingApply(true);
+    const res = await applyToCourse(user.profileId, applyCourseId, sopText, {
+      cert10Name: cert10Name || '',
+      cert10Data: cert10Data || '',
+      cert12Name: cert12Name || '',
+      cert12Data: cert12Data || '',
+      ugName: ugName || '',
+      ugData: ugData || '',
+      tcName: tcName || undefined,
+      tcData: tcData || undefined,
+      migrationName: migrationName || undefined,
+      migrationData: migrationData || undefined,
+      characterName: characterName || undefined,
+      characterData: characterData || undefined,
+      bonafideName: bonafideName || undefined,
+      bonafideData: bonafideData || undefined
+    });
+    setSubmittingApply(false);
     if (res.success) {
-      setCourses(prev => prev.map(c => c.id === course.id ? { ...c, is_saved: !currentlySaved } : c));
+      alert(`Successfully submitted application for: ${applyCourseName}! Check status in your Student Dashboard.`);
+      closeApplyModal();
+    } else {
+      alert(res.error || 'Failed to submit application.');
     }
   };
 
@@ -303,7 +434,7 @@ export default function UniversitiesPage() {
               setCourseDept('all');
               setCourseFeesMax(80000);
             }}
-            className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer text-slate-700"
+            className="w-full py-2.5 bg-teal-50/25 hover:bg-teal-50 border border-teal-600/20 hover:border-teal-600/45 rounded-xl text-xs font-bold transition-all cursor-pointer text-[#00A896]"
           >
             Clear Filters
           </button>
@@ -349,11 +480,11 @@ export default function UniversitiesPage() {
                         <button
                           onClick={() => handleSaveUniv(univ)}
                           className={`rounded-lg p-1.5 border transition-all cursor-pointer ${univ.is_saved
-                            ? 'bg-teal-bright/15 border-teal-bright text-teal-bright'
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
                             : 'bg-white/40 border-teal-green/20 text-slate-700 hover:text-slate-950 hover:bg-white/60'
                             }`}
                         >
-                          <Star className={`h-4 w-4 ${univ.is_saved ? 'fill-teal-bright' : ''}`} />
+                          <Star className={`h-4 w-4 transition-all duration-300 ${univ.is_saved ? 'fill-amber-500 text-amber-500 scale-110' : ''}`} />
                         </button>
                       </div>
 
@@ -377,8 +508,7 @@ export default function UniversitiesPage() {
                       </div>
                     </div>
 
-                    {/* Footer */}
-                    <div className="flex justify-between items-center border-t border-teal-green/15 pt-3 mt-2">
+                    <div className="flex flex-wrap justify-between items-center gap-2 border-t border-teal-green/15 pt-3 mt-2">
                       <a
                         href={univ.website}
                         target="_blank"
@@ -390,11 +520,33 @@ export default function UniversitiesPage() {
                       </a>
                       <button
                         onClick={() => {
+                          setSelectedUnivForGuidelines(univ);
+                          setIsGuidelinesModalOpen(true);
+                        }}
+                        className="text-xs font-semibold text-slate-700 hover:text-teal-dark flex items-center gap-1 bg-transparent border-0 cursor-pointer transition-colors"
+                      >
+                        <ClipboardList className="h-3.5 w-3.5" />
+                        <span>Guidelines</span>
+                      </button>
+                      {unisWithSch.includes(univ.name) && (
+                        <button
+                          onClick={() => {
+                            setSelectedUnivForGuidelines(univ);
+                            setIsUnivSchModalOpen(true);
+                          }}
+                          className="text-xs font-semibold text-slate-700 hover:text-teal-dark flex items-center gap-1 bg-transparent border-0 cursor-pointer transition-colors"
+                        >
+                          <Award className="h-3.5 w-3.5" />
+                          <span>Scholarships</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
                           setActiveTab('courses');
                           setCourseFeesMax(80000);
                           setSearch(univ.name);
                         }}
-                        className="text-xs font-semibold text-teal-dark hover:underline"
+                        className="text-xs font-semibold text-teal-dark hover:underline bg-transparent border-0 cursor-pointer"
                       >
                         View Courses &rarr;
                       </button>
@@ -457,14 +609,32 @@ export default function UniversitiesPage() {
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {(!user || user.role === 'student') && (
+                          <button
+                            onClick={() => {
+                              if (!user || !user.profileId) {
+                                alert('Please sign in to submit a course application.');
+                                return;
+                              }
+                              setApplyCourseId(course.id);
+                              setApplyCourseName(course.name);
+                              setSelectedCourseForApply(course);
+                              setSopText('');
+                              setIsApplyModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-teal-dark hover:bg-teal-700 text-white font-bold rounded-lg text-[10.5px] transition-all cursor-pointer border-0 shadow-sm"
+                          >
+                            Apply Now
+                          </button>
+                        )}
                         <button
                           onClick={() => handleSaveCourse(course)}
                           className={`rounded-lg p-1.5 border transition-all cursor-pointer ${course.is_saved
-                            ? 'bg-teal-bright/15 border-teal-bright text-teal-bright'
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-500'
                             : 'bg-white/40 border-teal-green/20 text-slate-700 hover:text-slate-950 hover:bg-white/60'
                             }`}
                         >
-                          <Star className={`h-4 w-4 ${course.is_saved ? 'fill-teal-bright' : ''}`} />
+                          <Star className={`h-4 w-4 transition-all duration-300 ${course.is_saved ? 'fill-amber-500 text-amber-500 scale-110' : ''}`} />
                         </button>
                       </div>
                     </div>
@@ -498,6 +668,513 @@ export default function UniversitiesPage() {
             <span className="text-[10px] font-extrabold text-teal-400 uppercase tracking-widest block">Passport Stamp Earned!</span>
             <span className="text-xs font-bold block">{newStampAlert} Explorer</span>
             <span className="text-[9px] text-slate-400 block mt-0.5">Earned study destination stamp & +50 XP rewarded!</span>
+          </div>
+        </div>
+      )}
+      {/* Course Application Modal */}
+      {isApplyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-2xl relative max-h-[90vh] overflow-hidden flex flex-col">
+            <h3 className="text-md font-bold text-slate-900 border-b border-slate-100 pb-3 mb-5 uppercase tracking-wide flex justify-between items-center shrink-0">
+              <span>Apply for Course Admission</span>
+              <button type="button" onClick={closeApplyModal} className="text-slate-400 hover:text-slate-650 cursor-pointer bg-transparent border-0"><X className="h-5 w-5" /></button>
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 overflow-y-auto pr-1">
+              
+              {/* Left Column: Requirements & Procedures */}
+              <div className="space-y-4 pr-0 md:pr-4 md:border-r border-slate-100 text-xs">
+                <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-100 pb-2 uppercase tracking-wide">
+                  <ClipboardList className="h-4 w-4 text-teal-dark" />
+                  <span>Admission Requirements</span>
+                </h4>
+                
+                {/* Eligibility requirements */}
+                <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-4 space-y-2">
+                  <span className="text-[10px] font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                    <Award className="h-3.5 w-3.5" />
+                    <span>Academic Eligibility</span>
+                  </span>
+                  <p className="text-slate-700 leading-relaxed font-medium">
+                    {selectedCourseForApply?.eligibility_requirements || "Standard academic eligibility criteria apply. Ensure you meet the department's grade points threshold."}
+                  </p>
+                </div>
+
+                {/* Application procedure */}
+                <div className="bg-teal-50/50 border border-teal-500/10 rounded-2xl p-4 space-y-2">
+                  <span className="text-[10px] font-extrabold text-teal-800 uppercase tracking-wider flex items-center gap-1">
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    <span>Application Steps</span>
+                  </span>
+                  <p className="text-slate-700 leading-relaxed font-medium whitespace-pre-line">
+                    {selectedCourseForApply?.application_procedure || "1. Submit Statement of Purpose (SOP)\n2. Profile assessment & verification\n3. Interview / assessment if required\n4. Offer decision."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right Column: Submission Form */}
+              <form onSubmit={handleApplySubmit} className="space-y-4 text-xs font-semibold text-slate-750 max-h-[60vh] overflow-y-auto pr-3 pb-4">
+                <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-100 pb-2 uppercase tracking-wide">
+                  <BookOpen className="h-4 w-4 text-teal-dark" />
+                  <span>Course & Submission</span>
+                </h4>
+
+                <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl">
+                  <p className="font-extrabold text-slate-950">Target Path:</p>
+                  <p className="text-slate-800 mt-1 font-bold text-sm leading-snug">{applyCourseName}</p>
+                  <p className="text-teal-dark text-xs font-semibold mt-0.5">{selectedCourseForApply?.university_name}</p>
+                </div>
+
+                <div>
+                  <label className="block text-slate-650 mb-1.5 uppercase font-bold text-[10px]">Statement of Purpose (SOP)</label>
+                  <textarea
+                    value={sopText}
+                    onChange={(e) => setSopText(e.target.value)}
+                    placeholder="Detail your academic background, research interests, and career goals for this specific course..."
+                    rows={4}
+                    className="w-full bg-white border border-slate-350 rounded-2xl p-3 text-slate-855 leading-relaxed font-medium focus:outline-none focus:border-teal-dark focus:ring-1 focus:ring-teal-dark shadow-sm text-xs"
+                    required
+                  />
+                </div>
+
+                {/* Academic Documents Upload Section */}
+                <div className="space-y-3.5 border-t border-slate-100 pt-3.5">
+                  <h5 className="font-bold text-[10px] text-slate-450 uppercase tracking-wider block">Academic Certificates (Required)</h5>
+                  
+                  {/* 10th Certificate Row */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">10th Class Certificate *</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setCert10Name(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setCert10Data(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        required
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {cert10Name ? cert10Name : 'Upload 10th Certificate'}
+                        </span>
+                      </div>
+                      {cert10Name && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+
+                  {/* 12th Certificate Row */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">12th Class Certificate *</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setCert12Name(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setCert12Data(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        required
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {cert12Name ? cert12Name : 'Upload 12th Certificate'}
+                        </span>
+                      </div>
+                      {cert12Name && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+
+                  {/* UG Marksheets Row */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">UG Degree Marksheets *</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setUgName(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setUgData(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        required
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {ugName ? ugName : 'Upload UG Marksheets'}
+                        </span>
+                      </div>
+                      {ugName && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Documents Section */}
+                <div className="space-y-3.5 border-t border-slate-100 pt-3.5">
+                  <h5 className="font-bold text-[10px] text-slate-450 uppercase tracking-wider block">Additional Documents (Optional)</h5>
+                  
+                  {/* Transfer Certificate (TC) */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">Transfer Certificate (TC)</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setTcName(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setTcData(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {tcName ? tcName : 'Upload Transfer Certificate (TC)'}
+                        </span>
+                      </div>
+                      {tcName && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+
+                  {/* Migration Certificate */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">Migration Certificate</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setMigrationName(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setMigrationData(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {migrationName ? migrationName : 'Upload Migration Certificate'}
+                        </span>
+                      </div>
+                      {migrationName && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+
+                  {/* Character/Conduct Certificate */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">Character/Conduct Certificate</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setCharacterName(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setCharacterData(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {characterName ? characterName : 'Upload Character/Conduct'}
+                        </span>
+                      </div>
+                      {characterName && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+
+                  {/* Bonafide Certificate */}
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-slate-650 block">Bonafide Certificate</label>
+                    <div className="relative border border-dashed border-slate-200 rounded-xl p-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between gap-3 bg-slate-50/50">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setBonafideName(file.name);
+                            const reader = new FileReader();
+                            reader.onload = (event) => setBonafideData(event.target?.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      />
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400 shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-600 truncate max-w-[150px]">
+                          {bonafideName ? bonafideName : 'Upload Bonafide Certificate'}
+                        </span>
+                      </div>
+                      {bonafideName && <span className="rounded-full bg-teal-bright/10 p-0.5 text-teal-bright"><Check className="h-3.5 w-3.5" /></span>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={closeApplyModal}
+                    className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingApply}
+                    className="bg-teal-dark hover:bg-teal-700 text-white font-bold px-5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm text-xs"
+                  >
+                    {submittingApply ? <Loader2 className="h-4 w-4 animate-spin" /> : <span>Submit Application</span>}
+                  </button>
+                </div>
+              </form>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* University Guidelines Modal */}
+      {isGuidelinesModalOpen && selectedUnivForGuidelines && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-2xl relative">
+            <h3 className="text-md font-bold text-slate-900 border-b border-slate-100 pb-3 mb-6 uppercase tracking-wide flex justify-between items-center">
+              <span className="flex items-center gap-2">
+                <Landmark className="h-5 w-5 text-teal-dark" />
+                <span>{selectedUnivForGuidelines.name} Admission Guidelines</span>
+              </span>
+              <button 
+                type="button" 
+                onClick={() => setIsGuidelinesModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer bg-transparent border-0"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </h3>
+
+            <div className="space-y-6 text-xs text-slate-750">
+              
+              {/* Quick stats grid */}
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">World Rank</span>
+                  <span className="text-sm font-extrabold text-slate-950 mt-1 block">#{selectedUnivForGuidelines.ranking}</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Acceptance Rate</span>
+                  <span className="text-sm font-extrabold text-slate-950 mt-1 block">{selectedUnivForGuidelines.acceptance_rate}%</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-3">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Tuition (Min)</span>
+                  <span className="text-sm font-extrabold text-teal-dark mt-1 block">
+                    {Number(selectedUnivForGuidelines.tuition_fee_min) === 0 ? 'Free' : formatPrice(Number(selectedUnivForGuidelines.tuition_fee_min), 'USD')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-1.5">
+                <h4 className="font-bold text-slate-900 uppercase tracking-wider text-[10px]">Overview</h4>
+                <p className="leading-relaxed font-medium text-slate-600">
+                  {selectedUnivForGuidelines.description}
+                </p>
+              </div>
+
+              {/* Requirements & Procedures */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* Requirements */}
+                <div className="bg-amber-500/5 border border-amber-500/10 rounded-2xl p-4 space-y-2">
+                  <h4 className="font-extrabold text-amber-900 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                    <Award className="h-4 w-4 text-amber-700" />
+                    <span>Eligibility Requirements</span>
+                  </h4>
+                  <p className="leading-relaxed font-medium text-slate-700 whitespace-pre-line">
+                    {selectedUnivForGuidelines.eligibility_requirements || "Standard academic eligibility criteria apply. Minimum CGPA requirements and required standardized test scores depend on the specific program."}
+                  </p>
+                </div>
+
+                {/* Procedures */}
+                <div className="bg-teal-500/5 border border-teal-500/10 rounded-2xl p-4 space-y-2">
+                  <h4 className="font-extrabold text-teal-900 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                    <ClipboardList className="h-4 w-4 text-teal-700" />
+                    <span>Application Procedure</span>
+                  </h4>
+                  <p className="leading-relaxed font-medium text-slate-700 whitespace-pre-line">
+                    {selectedUnivForGuidelines.application_procedure || "1. Submit Statement of Purpose (SOP)\n2. Profile assessment & verification\n3. Interview / assessment if required\n4. Offer decision."}
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Scholarships Offered by University */}
+              <div className="border-t border-slate-100 pt-4 space-y-3">
+                <h4 className="font-extrabold text-slate-900 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                  <Award className="h-4 w-4 text-teal-dark" />
+                  <span>University Funded Scholarships</span>
+                </h4>
+                
+                {loadingUnivSch ? (
+                  <div className="text-center py-4 text-slate-400 text-xs">
+                    <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
+                    <span>Loading scholarships...</span>
+                  </div>
+                ) : univScholarships.length === 0 ? (
+                  <p className="text-slate-500 italic leading-relaxed font-medium">
+                    No university-funded scholarships are currently published by this institution.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 max-h-40 overflow-y-auto pr-1">
+                    {univScholarships.map((sch) => (
+                      <div key={sch.id} className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-slate-900 text-xs truncate max-w-[170px]">{sch.name}</span>
+                          <span className="text-[10px] font-extrabold text-teal-dark bg-teal-50 px-2 py-0.5 rounded border border-teal-100 uppercase shrink-0">
+                            {sch.amount}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 font-medium text-[11px] leading-relaxed line-clamp-3">
+                          <strong>Criteria:</strong> {sch.eligibility_criteria}
+                        </p>
+                        <div className="text-[9.5px] text-slate-450 flex items-center gap-1">
+                          <span className="font-bold uppercase">Scope:</span>
+                          <span className="capitalize">{sch.coverage}</span>
+                          <span className="mx-1">&bull;</span>
+                          <span className="font-bold uppercase">Deadline:</span>
+                          <span>{new Date(sch.deadline).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
+                <a
+                  href={selectedUnivForGuidelines.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 border border-slate-350 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm no-underline"
+                >
+                  <span>Visit Website</span>
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsGuidelinesModalOpen(false)}
+                  className="bg-teal-dark hover:bg-teal-700 text-white font-bold px-5 py-2 rounded-xl text-xs cursor-pointer shadow-sm border-0"
+                >
+                  Close Guidelines
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* University Scholarships Modal */}
+      {isUnivSchModalOpen && selectedUnivForGuidelines && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4">
+          <div className="w-full max-w-2xl bg-white border border-slate-200 rounded-3xl p-6 md:p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <h3 className="text-md font-bold text-slate-900 border-b border-slate-100 pb-3 mb-6 uppercase tracking-wide flex justify-between items-center">
+              <span className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-teal-dark" />
+                <span>Scholarships offered by {selectedUnivForGuidelines.name}</span>
+              </span>
+              <button 
+                type="button" 
+                onClick={() => setIsUnivSchModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 cursor-pointer bg-transparent border-0"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </h3>
+
+            <div className="space-y-6">
+              {loadingUnivSch ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
+                  <span>Loading scholarships...</span>
+                </div>
+              ) : univScholarships.length === 0 ? (
+                <p className="text-slate-500 italic text-center py-8 text-xs font-semibold">
+                  No university-funded scholarships are currently published by this institution.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {univScholarships.map((sch) => (
+                    <div key={sch.id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-extrabold text-slate-900 text-xs truncate">{sch.name}</span>
+                        <span className="text-[10px] font-extrabold text-teal-dark bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-100 uppercase shrink-0">
+                          {sch.amount}
+                        </span>
+                      </div>
+                      <p className="text-slate-650 font-medium text-[11px] leading-relaxed">
+                        <strong>Academic Eligibility:</strong> {sch.eligibility_criteria}
+                      </p>
+                      <div className="text-[10px] text-slate-500 border-t border-slate-200/60 pt-2 mt-2 flex items-center justify-between font-semibold">
+                        <div>
+                          <span className="font-bold uppercase text-[9px] text-slate-400">Coverage:</span>
+                          <span className="capitalize ml-1 text-slate-700">{sch.coverage}</span>
+                        </div>
+                        <div>
+                          <span className="font-bold uppercase text-[9px] text-slate-400">Deadline:</span>
+                          <span className="ml-1 text-slate-700">{new Date(sch.deadline).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex justify-end border-t border-slate-100 pt-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsUnivSchModalOpen(false)}
+                  className="bg-teal-dark hover:bg-teal-700 text-white font-bold px-5 py-2 rounded-xl text-xs cursor-pointer shadow-sm border-0"
+                >
+                  Close Scholarships
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

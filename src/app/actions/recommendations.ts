@@ -41,11 +41,21 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
     }
     const targetUniv = univRes.rows[0];
 
+    // 1b. Fetch specific entrance exam requirements if any
+    const courseRequirementsRes = await query(`
+      SELECT cer.*, ee.name as exam_name, ee.full_name as exam_full_name
+      FROM course_exam_requirements cer
+      JOIN entrance_exams ee ON cer.exam_id = ee.id
+      JOIN courses c ON cer.course_id = c.id
+      WHERE c.university_id = $1 AND (c.name ILIKE $2 OR c.department ILIKE $2)
+    `, [input.targetUnivId, `%${input.targetCourse}%`]);
+    const examRequirements = courseRequirementsRes.rows;
+
     // 2. Fetch a smart subset of other universities (10 dream, 10 moderate, 10 safe relative to target ranking)
     const targetRank = targetUniv.ranking || 500;
 
     const dreamRes = await query(`
-      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate 
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate, u.eligibility_requirements
       FROM universities u
       JOIN countries c ON u.country_id = c.id
       WHERE u.ranking < $1
@@ -54,7 +64,7 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
     `, [targetRank]);
 
     const moderateRes = await query(`
-      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate 
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate, u.eligibility_requirements
       FROM universities u
       JOIN countries c ON u.country_id = c.id
       ORDER BY ABS(u.ranking - $1) ASC
@@ -62,7 +72,7 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
     `, [targetRank]);
 
     const safeRes = await query(`
-      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate 
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate, u.eligibility_requirements
       FROM universities u
       JOIN countries c ON u.country_id = c.id
       WHERE u.ranking > $1
@@ -83,14 +93,22 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
 
     const systemPrompt = `
 You are the Nexora Admission Chance Predictor, an expert university admissions audit system.
-Analyze the student's profile details and target choices below and compute:
-1. Admission Probability (from 10% to 95%).
-2. Eligibility Status (one of "Safe", "Moderate", or "Dream").
-3. A detailed analysis explanation explaining the reasoning behind the prediction (strengths/gaps in GPA, exam scores, papers, etc., relative to the target university ranking and acceptance rate).
+Analyze the student's profile details and target choices below. You MUST audit the student's credentials (CGPA, TOEFL, IELTS, GRE) directly against the target university's general eligibility requirements and course-specific exam minimum scores from the database.
+
+Deduce the probability strictly:
+1. Admission Probability (from 10% to 95%):
+   - Deduct heavily if the student fails to meet the minimum GPA or minimum exam score requirements.
+   - If they meet or exceed the requirements, calculate the probability based on the university's acceptance rate and student's profile strength (projects, work experience, papers).
+2. Eligibility Status (one of "Safe", "Moderate", or "Dream"):
+   - "Safe" if student comfortably exceeds all requirements and has a strong profile.
+   - "Moderate" if they meet requirements but the university has a competitive acceptance rate.
+   - "Dream" if they do not meet some requirements, or if the university is highly competitive (acceptance rate < 10%).
+3. A detailed analysis explanation:
+   - Explicitly cite the university's GPA and test requirements versus the student's actual values (e.g. "Your CGPA of 3.6 exceeds the minimum requirement of 3.0, but your GRE is not provided which is recommended").
 4. Select 2-3 suitable alternative universities from the provided database list categorized under "Safe", "Moderate", and "Dream".
 
 Available Database Universities:
-${allUnivs.map(u => `- ${u.name} (Rank: #${u.ranking}, Acceptance: ${u.acceptance_rate}%, Country: ${u.country_name})`).join('\n')}
+${allUnivs.map(u => `- ${u.name} (Rank: #${u.ranking}, Acceptance: ${u.acceptance_rate}%, Country: ${u.country_name}, Req: ${u.eligibility_requirements || 'Minimum GPA: 3.0, IELTS 6.5'}).`).join('\n')}
 
 Output your response in STRICT JSON format matching the following schema:
 {
@@ -118,6 +136,10 @@ Student Academic Profile:
 Target Choice:
 - Target University: ${targetUniv.name} (Rank: #${targetUniv.ranking}, Acceptance Rate: ${targetUniv.acceptance_rate}%)
 - Target Course: ${input.targetCourse}
+
+Target University Admission & Eligibility Requirements (from Database):
+- General Requirements: ${targetUniv.eligibility_requirements || 'Minimum GPA: 3.0 or equivalent, English test required (IELTS 6.5 / TOEFL 90).'}
+${examRequirements.length > 0 ? `- Course Specific Exam Minimum Scores:\n${examRequirements.map(er => `  * ${er.exam_full_name} (${er.exam_name}): Minimum score of ${er.min_score}`).join('\n')}` : ''}
 `;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -212,14 +234,14 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
 
     // 1. Fetch DB Universities matching preferred countries, sorted by ranking (limit to 30)
     let uniSql = `
-      SELECT u.id, u.name, u.ranking, u.acceptance_rate, c.name as country_name 
+      SELECT u.id, u.name, u.ranking, u.acceptance_rate, u.eligibility_requirements, c.name as country_name 
       FROM universities u
       JOIN countries c ON u.country_id = c.id
     `;
     const uniParams = [];
     if (input.preferredCountries && input.preferredCountries.length > 0 && !input.preferredCountries.includes('Any')) {
-      uniSql += ` WHERE c.name = ANY($1) `;
-      uniParams.push(input.preferredCountries);
+      uniSql += ` WHERE LOWER(c.name) = ANY($1) `;
+      uniParams.push(input.preferredCountries.map(c => c.toLowerCase().trim()));
     }
     uniSql += ` ORDER BY u.ranking ASC LIMIT 30 `;
     const univsRes = await query(uniSql, uniParams);
@@ -237,8 +259,8 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
     let pIdx = 2;
 
     if (input.preferredCountries && input.preferredCountries.length > 0 && !input.preferredCountries.includes('Any')) {
-      courseSql += ` AND co.name = ANY($${pIdx}) `;
-      courseParams.push(input.preferredCountries);
+      courseSql += ` AND LOWER(co.name) = ANY($${pIdx}) `;
+      courseParams.push(input.preferredCountries.map(c => c.toLowerCase().trim()));
       pIdx++;
     }
 
@@ -252,8 +274,8 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
     let coursesRes = await query(courseSql, courseParams);
     let dbCourses = coursesRes.rows;
 
-    if (dbCourses.length === 0) {
-      // Fallback: Broaden search by removing constraints if no matches are found
+    if (dbCourses.length === 0 && dbUnivs.length > 0) {
+      // Fallback: Broaden search by removing constraints if no matches are found but universities exist
       const fallbackRes = await query(`
         SELECT c.id, c.name, c.degree_type, c.department, c.fees, c.duration, u.name as university_name
         FROM courses c
@@ -267,20 +289,38 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
     const scholarshipsRes = await query('SELECT name, provider, amount, eligibility_criteria FROM scholarships LIMIT 20');
     const dbScholarships = scholarshipsRes.rows;
 
+    // 4. Fetch DB Countries with Visa Details
+    const countriesRes = await query(`
+      SELECT c.name, c.visa_info, c.average_living_cost, c.currency, v.requirements, v.timeline, v.fee
+      FROM countries c
+      LEFT JOIN visas v ON v.country_id = c.id
+    `);
+    const dbCountries = countriesRes.rows;
+
     const systemPrompt = `
 You are the Nexora AI Higher Studies Recommendation Engine.
 Match the student's background against the local database context of Universities, Courses, and Scholarships.
 Return highly personalized recommendations.
 
-Context Lenders Catalog from DB:
+CRITICAL RULE: You MUST ONLY recommend universities, courses, scholarships, and countries that are explicitly listed in the "Context Catalog from DB" below. You are strictly FORBIDDEN from suggesting or hallucinating any school, course, scholarship, or country not present in these lists.
+- If the "Universities" list is empty, return an empty array [] for "universities" and "courses". Do not suggest any universities.
+- If the "Courses" list is empty, return an empty array [] for "courses".
+- If the "Scholarships" list is empty, return an empty array [] for "scholarships".
+- If the "Countries & Visas" list is empty, return an empty array [] for "countries".
+- Do not mention or recommend standard institutions like MIT, Stanford, TUM, or IITs unless they are explicitly present in the catalogs below.
+
+Context Catalog from DB:
 --- Universities ---
-${dbUnivs.map(u => `- ${u.name} (Rank: #${u.ranking}, Country: ${u.country_name})`).join('\n')}
+${dbUnivs.map(u => `- ${u.name} (Rank: #${u.ranking}, Country: ${u.country_name}, Requirements: ${u.eligibility_requirements || 'Minimum GPA: 3.0, IELTS 6.5'}).`).join('\n') || '(No universities in database)'}
 
 --- Courses ---
-${dbCourses.map(c => `- ${c.name} (${c.degree_type}) at ${c.university_name} (Fees: $${Number(c.fees).toLocaleString()}/yr, Duration: ${c.duration}, Dept: ${c.department})`).join('\n')}
+${dbCourses.map(c => `- ${c.name} (${c.degree_type}) at ${c.university_name} (Fees: $${Number(c.fees).toLocaleString()}/yr, Duration: ${c.duration}, Dept: ${c.department})`).join('\n') || '(No courses in database)'}
 
 --- Scholarships ---
-${dbScholarships.map(s => `- ${s.name} by ${s.provider} (Amount: ${s.amount}, Criteria: ${s.eligibility_criteria})`).join('\n')}
+${dbScholarships.map(s => `- ${s.name} by ${s.provider} (Amount: ${s.amount}, Criteria: ${s.eligibility_criteria})`).join('\n') || '(No scholarships in database)'}
+
+--- Countries & Visas ---
+${dbCountries.map(c => `- ${c.name}: Requirements: ${c.requirements || c.visa_info || 'N/A'}, Timeline: ${c.timeline || 'N/A'}, Fee: $${c.fee || 'N/A'}, Avg Cost: $${Number(c.average_living_cost).toLocaleString()}/month (${c.currency})`).join('\n') || '(No countries in database)'}
 
 Return your response in STRICT JSON format matching the following schema:
 {
@@ -323,7 +363,7 @@ Student Preferences & Background:
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        temperature: 0.5,
+        temperature: 0.1,
         response_format: { type: "json_object" }
       })
     });
@@ -339,18 +379,10 @@ Student Preferences & Background:
   } catch (error) {
     console.error('Error generating AI recommendations:', error);
     return {
-      universities: [
-        { name: 'Technical University of Munich', ranking: 37, country: 'Germany', reason: 'TUM matches your target department and tuition fees fit your budget preference.' }
-      ],
-      courses: [
-        { name: 'MSc in Informatics', university: 'Technical University of Munich', fees: '$0/yr', duration: '2 Years', matchReason: 'Tuition is free and major alignment is ideal.' }
-      ],
-      scholarships: [
-        { name: 'DAAD Scholarship (EPOS)', provider: 'German Academic Exchange', amount: 'Full Funding', criteria: 'Requires relevant degree and CGPA matching.' }
-      ],
-      countries: [
-        { name: 'Germany', visaInfo: 'Blocked account showing €11,908 required.', averageCost: '€950/month' }
-      ]
+      universities: [],
+      courses: [],
+      scholarships: [],
+      countries: []
     };
   }
 }

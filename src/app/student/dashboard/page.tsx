@@ -14,7 +14,9 @@ import {
   updateStudentProfile, toggleSaveUniversity, toggleSaveCourse, toggleSaveScholarship,
   getUniversities, getCourses, getScholarships, getVisaGuidance, getFlightsEstimates,
   getAccommodations, calculateAndSavePrediction, getStudentRequiredExams, updateStudentMilestones,
-  getLeaderboard
+  getLeaderboard, getStudentApplications,
+  getStudentRoomBookings, getStudentFlightBookings, payAccommodationDeposit, payFlightTicket,
+  cancelRoomBooking, cancelFlightBooking, submitFlightReview
 } from '@/app/actions/student';
 import { useCurrency } from '@/components/CurrencyContext';
 
@@ -30,6 +32,22 @@ export default function StudentDashboard() {
   const [savedItems, setSavedItems] = useState<any>({ universities: [], courses: [], scholarships: [] });
   const [requiredExams, setRequiredExams] = useState<any[]>([]);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [applications, setApplications] = useState<any[]>([]);
+  
+  // Bookings list states
+  const [roomBookings, setRoomBookings] = useState<any[]>([]);
+  const [flightBookings, setFlightBookings] = useState<any[]>([]);
+  const [payingBookingId, setPayingBookingId] = useState<number | null>(null);
+  const [payingFlightId, setPayingFlightId] = useState<number | null>(null);
+  const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
+  const [cancellingFlightId, setCancellingFlightId] = useState<number | null>(null);
+
+  // Review & Ratings States
+  const [activeReviewBooking, setActiveReviewBooking] = useState<any | null>(null);
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewText, setReviewText] = useState<string>('');
+  const [submittingReview, setSubmittingReview] = useState<boolean>(false);
+  
   
   // Recommendations data
   const [recommendedUnivs, setRecommendedUnivs] = useState<any[]>([]);
@@ -40,7 +58,7 @@ export default function StudentDashboard() {
   const [visaGuidance, setVisaGuidance] = useState<any>(null);
   const [flights, setFlights] = useState<any[]>([]);
   const [accommodations, setAccommodations] = useState<any[]>([]);
-  const [activeGuidanceTab, setActiveGuidanceTab] = useState<'visa' | 'flights' | 'housing' | 'exams' | 'milestones'>('visa');
+  const [activeGuidanceTab, setActiveGuidanceTab] = useState<'exams' | 'milestones'>('exams');
   const [completedMilestones, setCompletedMilestones] = useState<string[]>([]);
   
   // Interactive Probability Tester
@@ -121,6 +139,15 @@ export default function StudentDashboard() {
         const leaderboardData = await getLeaderboard();
         setLeaderboard(leaderboardData);
 
+        const apps = await getStudentApplications(studProfile.id);
+        setApplications(apps);
+
+        const rooms = await getStudentRoomBookings(studProfile.id);
+        setRoomBookings(rooms);
+        
+        const travels = await getStudentFlightBookings(studProfile.id);
+        setFlightBookings(travels);
+
         // Load all universities list for Tester
         const allU = await getUniversities({});
         setAllUnivs(allU);
@@ -182,17 +209,136 @@ export default function StudentDashboard() {
     setCalculatingChance(false);
   };
 
+  const handlePayAccommodationDeposit = async (bookingId: number) => {
+    setPayingBookingId(bookingId);
+    try {
+      const res = await payAccommodationDeposit(bookingId);
+      if (res.success) {
+        alert('Payment of deposit successful! Your accommodation booking is confirmed.');
+        if (profile) {
+          const rooms = await getStudentRoomBookings(profile.id);
+          setRoomBookings(rooms);
+        }
+      } else {
+        alert(res.error || 'Failed to complete deposit payment.');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPayingBookingId(null);
+    }
+  };
+
+  const handlePayFlightTicket = async (bookingId: number) => {
+    setPayingFlightId(bookingId);
+    try {
+      const res = await payFlightTicket(bookingId);
+      if (res.success) {
+        alert('Payment of ticket successful! Your flight booking is confirmed.');
+        if (profile) {
+          const travels = await getStudentFlightBookings(profile.id);
+          setFlightBookings(travels);
+        }
+      } else {
+        alert(res.error || 'Failed to complete flight payment.');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPayingFlightId(null);
+    }
+  };
+
+  const handleCancelRoomBooking = async (bookingId: number) => {
+    if (!confirm('Are you sure you want to cancel this accommodation booking request? This will restore room availability.')) return;
+    setCancellingBookingId(bookingId);
+    try {
+      const res = await cancelRoomBooking(bookingId);
+      if (res.success) {
+        alert('Accommodation booking request successfully cancelled.');
+        if (profile) {
+          const rooms = await getStudentRoomBookings(profile.id);
+          setRoomBookings(rooms || []);
+        }
+      } else {
+        alert(res.error || 'Failed to cancel booking.');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCancellingBookingId(null);
+    }
+  };
+
+  const handleCancelFlightBooking = async (booking: any) => {
+    const isPaidOrConfirmed = booking.status === 'confirmed' || booking.status === 'paid';
+    const confirmMessage = isPaidOrConfirmed
+      ? `Are you sure you want to cancel your confirmed boarding pass? A full refund of $${Math.round(Number(booking.total_cost))} will be automatically processed back to your original payment method. This will release the assigned seat(s).`
+      : 'Are you sure you want to cancel this flight booking request? This will free up the seats.';
+
+    if (!confirm(confirmMessage)) return;
+    setCancellingFlightId(booking.id);
+    try {
+      const res = await cancelFlightBooking(booking.id);
+      if (res.success) {
+        const successMessage = isPaidOrConfirmed
+          ? `Flight booking successfully cancelled. A full refund of $${Math.round(Number(booking.total_cost))} has been credited back to your account.`
+          : 'Flight booking request successfully cancelled.';
+        alert(successMessage);
+        if (profile) {
+          const travels = await getStudentFlightBookings(profile.id);
+          setFlightBookings(travels || []);
+        }
+      } else {
+        alert(res.error || 'Failed to cancel flight booking.');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCancellingFlightId(null);
+    }
+  };
+
+  const handleConfirmFlightReview = async () => {
+    if (!activeReviewBooking || !profile) return;
+    setSubmittingReview(true);
+    try {
+      const res = await submitFlightReview(
+        activeReviewBooking.package_id,
+        profile.name || 'Anonymous Student',
+        reviewRating,
+        reviewText.trim()
+      );
+      if (res.success) {
+        alert('Thank you for your rating and review!');
+        setActiveReviewBooking(null);
+        setReviewText('');
+        setReviewRating(5);
+        const travels = await getStudentFlightBookings(profile.id);
+        setFlightBookings(travels || []);
+      } else {
+        alert(res.error || 'Failed to submit review.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error submitting review.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+
   // Handle Profile Update
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile) return;
-    
+    if (!user || !profile) return;
+
     setUpdating(true);
     const res = await updateStudentProfile(profile.id, {
       name,
       degree,
       department,
-      cgpa: Number(cgpa) || 3.0,
+      cgpa: Number(cgpa),
       budget,
       linkedinUrl,
       githubUrl,
@@ -535,68 +681,6 @@ export default function StudentDashboard() {
             </div>
           </div>
 
-          {/* Interactive Admission Probability Tester */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-            <div className="border-b border-slate-200 pb-3">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Brain className="h-4.5 w-4.5 text-teal-dark" />
-                <span>Eligibility Probability Tester</span>
-              </h3>
-              <p className="text-[10px] text-slate-500 mt-1">Select any university to test your estimated odds of admission.</p>
-            </div>
-
-            <div className="space-y-3">
-              <select
-                value={selectedTesterUnivId}
-                onChange={(e) => setSelectedTesterUnivId(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl text-xs text-slate-800 p-3 focus:outline-none focus:border-teal-dark focus:ring-1 focus:ring-teal-dark cursor-pointer shadow-sm"
-              >
-                <option value="">-- Choose University --</option>
-                {allUnivs.map(u => (
-                  <option key={u.id} value={u.id}>{u.name} ({u.country_name})</option>
-                ))}
-              </select>
-
-              <button
-                type="button"
-                onClick={handleTestProbability}
-                disabled={calculatingChance || !selectedTesterUnivId}
-                className="w-full bg-slate-900 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 hover:bg-slate-800 cursor-pointer disabled:opacity-50 transition-all shadow-sm"
-              >
-                {calculatingChance ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Analyzing Parameters...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Run Probability Test</span>
-                    <Sparkles className="h-3.5 w-3.5 text-teal-bright" />
-                  </>
-                )}
-              </button>
-            </div>
-
-            {testerResult && (
-              <div className="mt-4 p-3 rounded-xl bg-teal-dark/5 border border-teal-dark/20 text-xs space-y-1">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-slate-900">{testerResult.university_name}</span>
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
-                    testerResult.status === 'safe' ? 'bg-emerald-100 text-emerald-800' : testerResult.status === 'moderate' ? 'bg-amber-100 text-amber-800' : 'bg-orange-100 text-orange-850'
-                  }`}>
-                    {testerResult.status}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 mt-1.5">
-                  <div className="flex-grow bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div className="h-full bg-teal-dark" style={{ width: `${testerResult.probability}%` }} />
-                  </div>
-                  <span className="font-black text-slate-900">{testerResult.probability}% Chance</span>
-                </div>
-              </div>
-            )}
-          </div>
-
           {/* Saved Admission Predictions List */}
           <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-3">
@@ -637,116 +721,6 @@ export default function StudentDashboard() {
                 })}
               </div>
             )}
-          </div>
-
-          {/* Smart Loan EMI & Currency Calculator */}
-          <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
-            <div className="border-b border-slate-200 pb-3">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                <DollarSign className="h-4.5 w-4.5 text-teal-dark" />
-                <span>Financial Loan & Fee Calculator</span>
-              </h3>
-              <p className="text-[10px] text-slate-500 mt-1">Estimate loan payments and convert foreign tuition values dynamically.</p>
-            </div>
-
-            {/* Part A: Loan EMI Calculator */}
-            <div className="space-y-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">1. Study Loan EMI Calculator</span>
-              
-              <div>
-                <div className="flex justify-between text-xs font-semibold mb-1">
-                  <span className="text-slate-650">Loan Amount:</span>
-                  <span className="text-teal-dark font-bold">₹{(loanAmount / 100000).toFixed(1)} Lakhs</span>
-                </div>
-                <input
-                  type="range"
-                  min="500000"
-                  max="5000000"
-                  step="100000"
-                  value={loanAmount}
-                  onChange={(e) => setLoanAmount(Number(e.target.value))}
-                  className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-dark"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between text-[11px] font-semibold mb-1">
-                    <span className="text-slate-650">Interest Rate:</span>
-                    <span className="text-teal-dark font-bold">{loanRate}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="6.0"
-                    max="15.0"
-                    step="0.25"
-                    value={loanRate}
-                    onChange={(e) => setLoanRate(Number(e.target.value))}
-                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-dark"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-[11px] font-semibold mb-1">
-                    <span className="text-slate-650">Tenure:</span>
-                    <span className="text-teal-dark font-bold">{loanTenure} Years</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="15"
-                    step="1"
-                    value={loanTenure}
-                    onChange={(e) => setLoanTenure(Number(e.target.value))}
-                    className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-teal-dark"
-                  />
-                </div>
-              </div>
-
-              {/* Calculated Monthly EMI */}
-              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-center">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-bold">Estimated Monthly EMI</span>
-                <span className="text-base font-black text-slate-900 mt-0.5 block">
-                  ₹{(() => {
-                    const r = (loanRate / 12) / 100;
-                    const n = loanTenure * 12;
-                    const emi = loanAmount * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1);
-                    return Math.round(emi).toLocaleString('en-IN');
-                  })()}
-                </span>
-              </div>
-            </div>
-
-            {/* Part B: Tuition Currency Converter */}
-            <div className="border-t border-slate-100 pt-3 space-y-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">2. Tuition Fee Converter</span>
-              <div className="flex gap-2">
-                <div className="flex-1 relative rounded-xl shadow-sm">
-                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
-                    <span className="text-slate-550 text-xs">$</span>
-                  </div>
-                  <input
-                    type="number"
-                    value={calcUsdAmount}
-                    onChange={(e) => setCalcUsdAmount(e.target.value)}
-                    placeholder="Tuition in USD"
-                    className="w-full bg-white border border-slate-200 rounded-xl text-xs text-slate-800 pl-6 pr-3 py-2 focus:outline-none focus:border-teal-dark"
-                  />
-                </div>
-                <div className="flex items-center text-xs font-bold text-slate-500">
-                  ≈
-                </div>
-                <div className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-800">
-                    ₹{(() => {
-                      const usd = Number(calcUsdAmount) || 0;
-                      return Math.round(usd * 83).toLocaleString('en-IN');
-                    })()}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-400">INR</span>
-                </div>
-              </div>
-              <p className="text-[9px] text-slate-500 italic text-center">Note: conversion uses standard index value of 1 USD = 83.0 INR.</p>
-            </div>
           </div>
 
         </div>
@@ -866,186 +840,35 @@ export default function StudentDashboard() {
             )}
           </div>
 
-          {/* 3. Travel, Visa & Accommodation Guidance Widgets */}
+          {/* 3. Academics & Roadmap Guidance Widgets */}
           {profile?.onboarding_completed && (
             <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-2">
                 <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
                   <Compass className="h-4.5 w-4.5 text-teal-dark" />
-                  <span>Travel, Visa & Housing Guidance</span>
+                  <span>Academics & Roadmap Guidance</span>
                 </h3>
 
                 {/* Tab controls */}
                 <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-[10px]">
                   <button
-                    onClick={() => setActiveGuidanceTab('visa')}
-                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      activeGuidanceTab === 'visa' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Visa
-                  </button>
-                  <button
-                    onClick={() => setActiveGuidanceTab('flights')}
-                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      activeGuidanceTab === 'flights' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Flights
-                  </button>
-                  <button
-                    onClick={() => setActiveGuidanceTab('housing')}
-                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      activeGuidanceTab === 'housing' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    Housing
-                  </button>
-                  <button
                     onClick={() => setActiveGuidanceTab('exams')}
-                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      activeGuidanceTab === 'exams' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer border-0 ${
+                      activeGuidanceTab === 'exams' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700 bg-transparent'
                     }`}
                   >
                     Exams
                   </button>
                   <button
                     onClick={() => setActiveGuidanceTab('milestones')}
-                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer ${
-                      activeGuidanceTab === 'milestones' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    className={`px-2 py-1 font-bold rounded-md transition-all cursor-pointer border-0 ${
+                      activeGuidanceTab === 'milestones' ? 'bg-white text-teal-dark shadow-sm' : 'text-slate-500 hover:text-slate-700 bg-transparent'
                     }`}
                   >
                     Milestones
                   </button>
                 </div>
               </div>
-
-              {/* Tab content 1: Visa Checklist */}
-              {activeGuidanceTab === 'visa' && (
-                <div className="space-y-3">
-                  {visaGuidance ? (
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center text-xs bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                        <span className="font-semibold text-slate-700">Required Documents checklist</span>
-                        <span className="text-[10px] text-teal-dark font-bold">Timeline: {visaGuidance.timeline}</span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-650">
-                        {visaGuidance.documents_required?.map((doc: string, idx: number) => (
-                          <div key={idx} className="flex items-center gap-1.5">
-                            <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                            <span className="truncate">{doc}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {visaGuidance.checklist_json?.steps && (
-                        <div className="pt-2 border-t border-slate-100">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Milestone Checklist Steps</span>
-                          <div className="space-y-1">
-                            {visaGuidance.checklist_json.steps.map((st: string, idx: number) => (
-                              <div key={idx} className="flex items-center gap-2 text-xs">
-                                <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[9px] font-bold text-slate-500">{idx + 1}</span>
-                                <span>{st}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Destination Climate-based Packing list */}
-                      <div className="pt-3 border-t border-slate-100 space-y-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                          Destination Climate Packing Checklist ({profile?.preferred_countries?.[0] || 'Germany'})
-                        </span>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-650">
-                          {(() => {
-                            const country = profile?.preferred_countries?.[0] || 'Germany';
-                            const common = [
-                              'Valid Passport & Student Visa',
-                              'University Admit Letter & Enrollment Confirmation',
-                              'Official academic transcripts & certificates',
-                              'Local currency cash & credit card',
-                              'Laptop, charger, and travel adapter plug'
-                            ];
-                            const cold = ['Canada', 'Germany', 'Sweden', 'UK', 'Netherlands', 'France'];
-                            const warm = ['Singapore', 'Australia', 'Japan'];
-                            let pack = common;
-                            if (cold.includes(country)) {
-                              pack = [...common, 'Heavy winter coat & windbreaker', 'Thermal innerwear (2 pairs)', 'Waterproof boots & thick socks', 'Gloves and scarves'];
-                            } else if (warm.includes(country)) {
-                              pack = [...common, 'Light cotton clothes', 'Umbrella or light raincoat', 'Sunscreen & sunglasses', 'Comfortable walking sandals'];
-                            } else {
-                              pack = [...common, 'Layering jackets & sweaters', 'Rain jacket', 'All-weather walking shoes'];
-                            }
-                            return pack.map((item, idx) => (
-                              <div key={idx} className="flex items-center gap-1.5">
-                                <div className="h-1.5 w-1.5 rounded-full bg-teal-dark shrink-0" />
-                                <span>{item}</span>
-                              </div>
-                            ));
-                          })()}
-                        </div>
-                      </div>
-
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">No visa guidance found for your preferred target country.</p>
-                  )}
-                </div>
-              )}
-
-              {/* Tab content 2: Flights Estimates */}
-              {activeGuidanceTab === 'flights' && (
-                <div className="space-y-3">
-                  {flights.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No flight pricing estimates loaded for your destination.</p>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {flights.map((f: any) => (
-                        <div key={f.id} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                          <div className="space-y-0.5">
-                            <span className="font-semibold text-slate-800 flex items-center gap-1">
-                              <Plane className="h-3.5 w-3.5 text-slate-400" />
-                              <span>{f.origin} to {f.country_name}</span>
-                            </span>
-                            {f.checklist_json?.tips && <p className="text-[10px] text-slate-500">{f.checklist_json.tips}</p>}
-                          </div>
-                          <span className="font-black text-slate-900 bg-teal-dark/10 text-teal-dark px-2.5 py-1 rounded-lg">
-                            ${Number(f.est_cost).toLocaleString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab content 3: Accommodations listings */}
-              {activeGuidanceTab === 'housing' && (
-                <div className="space-y-3">
-                  {accommodations.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No housing recommendations found for your preferences.</p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      {accommodations.map((a: any) => (
-                        <div key={a.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5 flex flex-col justify-between">
-                          <div>
-                            <div className="flex justify-between items-start">
-                              <span className="font-bold text-slate-800 truncate pr-2">{a.title}</span>
-                            </div>
-                            <span className="text-[10px] text-slate-500 block">{a.city_name} &bull; {a.distance_to_univ}</span>
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {a.facilities?.slice(0, 2).map((fac: string, idx: number) => (
-                                <span key={idx} className="bg-white border border-slate-200 text-[8px] text-slate-500 px-1 rounded">{fac}</span>
-                              ))}
-                            </div>
-                          </div>
-                          <span className="font-black text-slate-800 block text-right pt-2 border-t border-slate-200 mt-2">${Number(a.rent).toLocaleString()}/mo</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {/* Tab content 4: Required Entrance Exams */}
               {activeGuidanceTab === 'exams' && (
@@ -1155,6 +978,424 @@ export default function StudentDashboard() {
               )}
             </div>
           )}
+
+          {/* Submitted Applications */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-4 flex items-center justify-between">
+              <span>Submitted Applications Status</span>
+              <span className="text-[10px] text-[#00A896] bg-teal-50 border border-teal-100 font-extrabold px-2 py-0.5 rounded-full uppercase">
+                {applications.length} Active
+              </span>
+            </h3>
+            
+            {applications.length === 0 ? (
+              <div className="text-center py-6 text-slate-400 text-xs italic">
+                You haven't submitted any course applications yet. Explore universities and courses to apply!
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {applications.map((app: any) => {
+                  const getStatusBadge = (status: string) => {
+                    const s = status ? status.toLowerCase() : 'submitted';
+                    if (s === 'accepted') {
+                      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                    }
+                    if (s === 'rejected') {
+                      return 'bg-rose-50 text-rose-700 border-rose-200';
+                    }
+                    if (s === 'waitlisted') {
+                      return 'bg-amber-50 text-amber-700 border-amber-200';
+                    }
+                    if (s === 'under_review') {
+                      return 'bg-blue-50 text-blue-700 border-blue-200';
+                    }
+                    return 'bg-slate-50 text-slate-700 border-slate-200';
+                  };
+
+                  const getStatusLabel = (status: string) => {
+                    const s = status ? status.toLowerCase() : 'submitted';
+                    if (s === 'accepted') return 'Accepted / Approved';
+                    if (s === 'rejected') return 'Rejected';
+                    if (s === 'waitlisted') return 'Waitlisted';
+                    if (s === 'under_review') return 'Under Review';
+                    return 'Submitted (Pending)';
+                  };
+
+                  return (
+                    <div key={app.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col justify-between gap-3 shadow-sm hover:scale-[1.01] transition-all">
+                      <div className="flex gap-3 items-start">
+                        <div className="h-10 w-10 bg-white border border-slate-200 rounded-xl p-1.5 flex items-center justify-center shrink-0 shadow-inner">
+                          {app.logo_url ? (
+                            <img src={app.logo_url} alt={app.university_name} className="h-full w-full object-contain" />
+                          ) : (
+                            <Landmark className="h-5 w-5 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="space-y-0.5 truncate">
+                          <span className="font-extrabold text-slate-900 text-xs block truncate">{app.course_name}</span>
+                          <span className="text-[10px] font-bold text-slate-650 block truncate">{app.university_name}</span>
+                          <span className="text-[9px] text-slate-400 block">Applied on: {new Date(app.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-slate-200/60 pt-3">
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">Status:</span>
+                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-lg border uppercase tracking-wide ${getStatusBadge(app.status)}`}>
+                          {getStatusLabel(app.status)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Stay and Flight Bookings Tracker */}
+          <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6 md:col-span-2 text-slate-800">
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-4 flex items-center justify-between">
+              <span>Your Stay & Flight Bookings</span>
+              <span className="text-[10px] text-teal-dark font-extrabold bg-teal-50 px-2 py-0.5 rounded border border-teal-100">
+                {roomBookings.length + flightBookings.length} Total Bookings
+              </span>
+            </h3>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              
+              {/* Stay Bookings */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Building className="h-4.5 w-4.5 text-teal-650" />
+                  <span>Stay Bookings</span>
+                </h4>
+                {roomBookings.length === 0 ? (
+                  <p className="text-xs text-slate-450 italic bg-slate-50 border border-slate-100 p-4 rounded-xl">No accommodation bookings requested yet.</p>
+                ) : (
+                  <div className="space-y-3.5">
+                    {roomBookings.map((booking: any) => (
+                      <div key={booking.id} className="p-4 rounded-xl border border-slate-200/85 bg-white shadow-sm flex flex-col justify-between gap-3 text-xs text-slate-800">
+                        <div>
+                          <div className="flex justify-between items-start">
+                            <span className="font-extrabold text-slate-900 block capitalize">{booking.property_title}</span>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
+                              booking.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
+                              booking.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                              booking.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                              booking.status === 'cancelled' ? 'bg-slate-100 text-slate-700' :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {booking.status}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 block mt-1">{booking.property_address}</span>
+                          {booking.room_type && (
+                            <span className="text-[10px] text-teal-650 font-bold block mt-1">
+                              Room Type: {booking.room_type}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-455 block mt-1 font-semibold">
+                            Dates: {new Date(booking.check_in_date).toLocaleDateString()} to {new Date(booking.check_out_date).toLocaleDateString()}
+                          </span>
+                          {booking.document_url && (
+                            <span className="text-[9px] font-bold text-slate-450 block mt-0.5">
+                              Doc: {booking.document_url.split('/').pop()}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-slate-500 block mt-1 font-bold">
+                            Total cost: ${Math.round(Number(booking.total_cost))}
+                          </span>
+                        </div>
+
+                        {booking.status === 'approved' && (
+                          <button
+                            onClick={() => handlePayAccommodationDeposit(booking.id)}
+                            disabled={payingBookingId === booking.id}
+                            className="w-full mt-2 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold rounded-lg text-xs uppercase tracking-wider shadow-sm hover:scale-[1.01] transition-transform border-0 cursor-pointer flex items-center justify-center gap-1"
+                          >
+                            {payingBookingId === booking.id ? (
+                              <>
+                                <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                                <span>Processing Payment...</span>
+                              </>
+                            ) : (
+                              <>
+                                <DollarSign className="h-4 w-4" />
+                                <span>Pay Deposit & Confirm Stay</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                        {booking.status === 'paid' && (
+                          <div className="mt-2 p-2 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-800 text-[10px] font-bold flex items-center justify-center gap-1.5 uppercase tracking-wide">
+                            <ShieldCheck className="h-4 w-4 text-emerald-650" />
+                            <span>Booking Confirmed! Stay Secured</span>
+                          </div>
+                        )}
+                        {booking.status !== 'cancelled' && booking.status !== 'rejected' && (
+                          <button
+                            onClick={() => handleCancelRoomBooking(booking.id)}
+                            disabled={cancellingBookingId === booking.id}
+                            className="w-full mt-1 py-1.5 border border-rose-250 hover:border-rose-400 hover:bg-rose-50 text-rose-600 font-extrabold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1 bg-transparent"
+                          >
+                            {cancellingBookingId === booking.id ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                <span>Cancelling...</span>
+                              </>
+                            ) : (
+                              <span>Cancel Request / Booking</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Flight Bookings */}
+              <div className="space-y-4">
+                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Plane className="h-4.5 w-4.5 text-teal-650" />
+                  <span>Flight Bookings</span>
+                </h4>
+                {flightBookings.length === 0 ? (
+                  <p className="text-xs text-slate-450 italic bg-slate-50 border border-slate-100 p-4 rounded-xl">No flight package bookings requested yet.</p>
+                ) : (
+                  <div className="space-y-3.5">
+                    {flightBookings.map((booking: any) => {
+                      const isConfirmed = booking.status === 'confirmed' || booking.status === 'paid';
+                      const details = booking.booking_details ? (typeof booking.booking_details === 'string' ? JSON.parse(booking.booking_details) : booking.booking_details) : {};
+                      
+                      return (
+                        <div key={booking.id} className="p-0.5 rounded-3xl border border-slate-200 bg-white shadow-md overflow-hidden flex flex-col gap-0 text-xs text-slate-805">
+                          {/* Boarding Pass Tear-off Container */}
+                          {isConfirmed ? (
+                            <div className="bg-white text-slate-800 p-5 relative overflow-hidden flex flex-col md:flex-row gap-4 justify-between items-stretch rounded-t-3xl">
+                              {/* Left Side: Passenger & Flight Details */}
+                              <div className="space-y-4 flex-1">
+                                <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                                  <div className="flex items-center gap-2">
+                                    <Plane className="h-5 w-5 text-teal-600 rotate-45" />
+                                    <div>
+                                      <span className="text-[10px] text-slate-400 block font-black uppercase tracking-wider">Boarding Pass</span>
+                                      <span className="text-sm font-black text-slate-900">{booking.flight_info}</span>
+                                    </div>
+                                  </div>
+                                  <span className="px-2.5 py-0.5 bg-emerald-50 text-[10px] font-black uppercase tracking-wider text-emerald-700 border border-emerald-100 rounded">
+                                    Confirmed
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-2 text-[11px] font-bold">
+                                  <div>
+                                    <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Primary Passenger</span>
+                                    <span className="text-slate-800 truncate block">{booking.passenger_name}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Passport Number</span>
+                                    <span className="text-slate-800 block uppercase">{booking.passport_number}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Seats Assigned</span>
+                                    <span className="text-teal-650 block">
+                                      {details.selectedSeats && details.selectedSeats.length > 0 
+                                        ? details.selectedSeats.join(', ') 
+                                        : `Row ${booking.id} Standard`}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Class / Fare</span>
+                                    <span className="text-slate-800 block">{details.cabinClass || 'Economy'} Class</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Travel Agency</span>
+                                    <span className="text-slate-800 block truncate">{booking.travel_agency_name || 'Horizon Global'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Price Paid</span>
+                                    <span className="text-teal-600 block font-black">${Math.round(Number(booking.total_cost))}</span>
+                                  </div>
+                                </div>
+
+                                {/* Render Passenger List if seats > 1 */}
+                                {details.passengers && details.passengers.length > 1 && (
+                                  <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-[10px] space-y-1">
+                                    <span className="text-[8px] text-slate-450 block uppercase font-black">All Seat Passengers</span>
+                                    <div className="grid grid-cols-2 gap-1 font-medium">
+                                      {details.passengers.map((p: any, i: number) => (
+                                        <div key={i} className="truncate text-slate-700 font-semibold">
+                                          {i + 1}. {p.name} ({p.passport})
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Divider line with holes to represent perforated coupon tear off */}
+                              <div className="border-t md:border-t-0 md:border-l border-dashed border-slate-200 my-2 md:my-0 md:mx-4 relative">
+                                <div className="hidden md:block absolute top-0 -left-[9px] w-4.5 h-4.5 bg-slate-50 rounded-full border border-slate-200/50" />
+                                <div className="hidden md:block absolute bottom-0 -left-[9px] w-4.5 h-4.5 bg-slate-50 rounded-full border border-slate-200/50" />
+                              </div>
+
+                              {/* Right Side: tear-off coupon details */}
+                              <div className="md:w-44 flex flex-col justify-between space-y-3 md:text-right">
+                                <div>
+                                  <span className="text-[8px] text-slate-400 uppercase block mb-0.5">Electronic Ticket #</span>
+                                  <span className="text-sm font-mono font-black text-teal-650 block tracking-wider">
+                                    {booking.ticket_number || `TKT-${100000 + booking.id}`}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] space-y-1 font-semibold text-slate-650">
+                                  <div>Boarding: 45m before dept</div>
+                                  <div>Gate closes: 15m before</div>
+                                  <div>Checked bag: 40kg allowance</div>
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      setActiveReviewBooking(booking);
+                                      setReviewRating(5);
+                                      setReviewText('');
+                                    }}
+                                    className="w-full py-1.5 bg-gradient-teal-sunrise text-slate-950 font-black rounded-lg text-[9px] uppercase tracking-wider hover:scale-[1.02] transition-transform cursor-pointer border-0 shadow-sm"
+                                  >
+                                    Write Review
+                                  </button>
+                                  <button
+                                    onClick={() => handleCancelFlightBooking(booking)}
+                                    disabled={cancellingFlightId === booking.id}
+                                    className="w-full py-1.5 border border-rose-250 hover:border-rose-400 hover:bg-rose-50 text-rose-600 font-extrabold rounded-lg text-[9px] uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1 bg-transparent shadow-sm"
+                                  >
+                                    {cancellingFlightId === booking.id ? (
+                                      <>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        <span>Cancelling...</span>
+                                      </>
+                                    ) : (
+                                      <span>Cancel Booking</span>
+                                    )}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Standard pending/approved ticket booking details */
+                            <div className="p-5 flex flex-col gap-3">
+                              <div className="flex justify-between items-start border-b border-slate-100 pb-2">
+                                <div>
+                                  <span className="text-[8px] text-slate-400 uppercase font-black tracking-wider block">Flight Route Deal</span>
+                                  <h4 className="font-extrabold text-slate-900 leading-tight">{booking.flight_info}</h4>
+                                </div>
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${
+                                  booking.status === 'approved' ? 'bg-blue-50 border border-blue-100 text-blue-700' :
+                                  booking.status === 'rejected' ? 'bg-rose-50 border border-rose-100 text-rose-700' :
+                                  booking.status === 'cancelled' ? 'bg-slate-50 border border-slate-200 text-slate-700' :
+                                  'bg-amber-50 border border-amber-100 text-amber-700'
+                                }`}>
+                                  {booking.status}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-y-2 text-[11px] font-bold text-slate-700">
+                                <div>
+                                  <span className="text-[8px] text-slate-400 block uppercase">Lead Passenger</span>
+                                  <span>{booking.passenger_name} ({booking.seats_count} Ticket{booking.seats_count > 1 ? 's' : ''})</span>
+                                </div>
+                                <div>
+                                  <span className="text-[8px] text-slate-400 block uppercase">Passport Number</span>
+                                  <span className="uppercase">{booking.passport_number}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[8px] text-slate-400 block uppercase">Travel Agency</span>
+                                  <span>{booking.travel_agency_name || 'Horizon Global'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-[8px] text-slate-400 block uppercase">Price Due</span>
+                                  <span className="text-slate-900 font-extrabold">${Math.round(Number(booking.total_cost))}</span>
+                                </div>
+                              </div>
+
+                              {details.passengers && details.passengers.length > 1 && (
+                                <div className="bg-slate-50 p-2 rounded-xl text-[10px] space-y-0.5 text-slate-650 border border-slate-100">
+                                  <span className="text-[8px] font-bold text-slate-400 block uppercase">All Passengers</span>
+                                  <div className="grid grid-cols-2 gap-x-2 font-medium">
+                                    {details.passengers.map((p: any, i: number) => (
+                                      <div key={i} className="truncate">
+                                        {i + 1}. {p.name} ({p.passport})
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {booking.status === 'approved' && (
+                                <button
+                                  onClick={() => handlePayFlightTicket(booking.id)}
+                                  disabled={payingFlightId === booking.id}
+                                  className="w-full py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow hover:scale-[1.01] transition-transform border-0 cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  {payingFlightId === booking.id ? (
+                                    <>
+                                      <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                                      <span>Processing Payment...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <DollarSign className="h-4 w-4" />
+                                      <span>Pay Invoice (${Math.round(Number(booking.total_cost))})</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {booking.status !== 'cancelled' && booking.status !== 'rejected' && (
+                                <button
+                                  onClick={() => handleCancelFlightBooking(booking)}
+                                  disabled={cancellingFlightId === booking.id}
+                                  className="w-full py-1.5 border border-rose-250 hover:border-rose-350 hover:bg-rose-50 text-rose-600 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center gap-1 bg-transparent"
+                                >
+                                  {cancellingFlightId === booking.id ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      <span>Cancelling...</span>
+                                    </>
+                                  ) : (
+                                    <span>Cancel Booking Request</span>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Bulletins Sent by Agency */}
+                          {details.notifications && details.notifications.length > 0 && (
+                            <div className="bg-blue-50 border-t border-blue-150 p-4 space-y-2 text-[10px] text-blue-900 font-semibold leading-relaxed">
+                              <span className="text-[8px] font-black text-blue-800 uppercase tracking-wider block">Flight Travel Bulletin updates</span>
+                              <div className="space-y-1.5">
+                                {details.notifications.map((n: any, i: number) => (
+                                  <div key={i} className="flex gap-2 items-start bg-white/70 p-2 rounded-lg border border-blue-200">
+                                    <Sparkles className="h-3.5 w-3.5 text-blue-650 shrink-0 mt-0.5" />
+                                    <div>
+                                      <span className="block text-slate-800 text-[10px]">{n.message}</span>
+                                      <span className="block text-[8px] text-slate-400 font-medium mt-0.5">
+                                        {new Date(n.created_at).toLocaleString()}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
 
           {/* Bookmarked Items */}
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-6">
@@ -1451,6 +1692,81 @@ export default function StudentDashboard() {
           </div>
         </div>
             )}
+
+      {/* Flight Review & Star Rating Modal */}
+      {activeReviewBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm px-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-xl text-slate-805 animate-[fadeIn_0.2s_ease-out]">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Star className="h-4.5 w-4.5 text-yellow-500 fill-yellow-500" />
+                <span>Rate & Review Flight Deal</span>
+              </h3>
+              <button 
+                onClick={() => setActiveReviewBooking(null)}
+                className="text-slate-400 hover:text-slate-700 cursor-pointer border-0 bg-transparent"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] text-slate-450 uppercase block font-black mb-1">Flight Route Details</span>
+                <span className="text-xs font-extrabold text-slate-800">{activeReviewBooking.flight_info}</span>
+              </div>
+
+              {/* Star Rating selector */}
+              <div>
+                <span className="text-[10px] text-slate-450 uppercase block font-black mb-1.5">Select Flight Experience Rating</span>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setReviewRating(star)}
+                      className="border-0 bg-transparent cursor-pointer hover:scale-110 transition-transform"
+                    >
+                      <Star className={`h-8 w-8 ${star <= reviewRating ? 'text-yellow-500 fill-yellow-500' : 'text-slate-200'}`} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Review Text */}
+              <div>
+                <label className="block text-[10px] text-slate-455 uppercase font-black mb-1.5">Write Review Comment</label>
+                <textarea
+                  value={reviewText}
+                  onChange={(e) => setReviewText(e.target.value)}
+                  placeholder="Share details of your travel baggage convenience, transit smooth, seat comfort..."
+                  rows={4}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-3 text-xs focus:bg-white focus:outline-none focus:border-teal-dark transition-all resize-none"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 mt-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveReviewBooking(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold hover:bg-slate-50 text-slate-600 cursor-pointer bg-transparent"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={submittingReview || !reviewText.trim()}
+                  onClick={handleConfirmFlightReview}
+                  className="px-5 py-2 bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider shadow hover:scale-[1.02] transition-transform border-0 cursor-pointer disabled:opacity-50"
+                >
+                  {submittingReview ? 'Submitting...' : 'Submit Review'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

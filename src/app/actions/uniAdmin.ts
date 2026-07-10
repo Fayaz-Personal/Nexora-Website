@@ -10,16 +10,68 @@ export async function getUniAdminDetails() {
     const user = await getCurrentUser();
     if (!user || user.role !== 'uni_admin') return null;
 
+    // Check if user has a registration status
+    const regRes = await query(
+      "SELECT * FROM partner_registrations WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+      [user.id]
+    );
+
+    if (regRes.rows.length === 0) {
+      return {
+        verified: false,
+        hasRegistration: false,
+        user
+      };
+    }
+
+    const reg = regRes.rows[0];
+    if (reg.status !== 'verified') {
+      return {
+        verified: false,
+        hasRegistration: true,
+        status: reg.status,
+        registration: reg,
+        user
+      };
+    }
+
     const adminRes = await query('SELECT * FROM uni_admin_profiles WHERE user_id = $1', [user.id]);
-    if (adminRes.rows.length === 0) return null;
+    if (adminRes.rows.length === 0) {
+      // Fail-safe auto link
+      const countryRes = await query('SELECT id FROM countries LIMIT 1');
+      const countryId = countryRes.rows.length > 0 ? countryRes.rows[0].id : 1;
+      
+      const uniCheck = await query('SELECT id FROM universities WHERE name = $1 LIMIT 1', [reg.entity_name]);
+      let uniId;
+      if (uniCheck.rows.length === 0) {
+        const ins = await query('INSERT INTO universities (name, country_id) VALUES ($1, $2) RETURNING id', [reg.entity_name, countryId]);
+        uniId = ins.rows[0].id;
+      } else {
+        uniId = uniCheck.rows[0].id;
+      }
+      await query('INSERT INTO uni_admin_profiles (user_id, university_id) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING', [user.id, uniId]);
+      
+      const newAdmin = { user_id: user.id, university_id: uniId };
+      const newUniv = await query('SELECT * FROM universities WHERE id = $1', [uniId]);
+      return {
+        verified: true,
+        hasRegistration: true,
+        admin: newAdmin,
+        university: newUniv.rows[0],
+        user
+      };
+    }
 
     const admin = adminRes.rows[0];
     const univRes = await query('SELECT * FROM universities WHERE id = $1', [admin.university_id]);
     if (univRes.rows.length === 0) return null;
 
     return {
+      verified: true,
+      hasRegistration: true,
       admin,
-      university: univRes.rows[0]
+      university: univRes.rows[0],
+      user
     };
   } catch (error) {
     console.error('Error fetching uni admin details:', error);
@@ -130,6 +182,8 @@ export async function updateUniversityProfile(univId: number, data: {
   description: string;
   website: string;
   logoUrl: string;
+  applicationProcedure?: string;
+  eligibilityRequirements?: string;
 }) {
   try {
     const user = await getCurrentUser();
@@ -138,11 +192,14 @@ export async function updateUniversityProfile(univId: number, data: {
     await query(`
       UPDATE universities
       SET name = $1, ranking = $2, tuition_fee_min = $3, tuition_fee_max = $4,
-          acceptance_rate = $5, description = $6, website = $7, logo_url = $8
-      WHERE id = $9
+          acceptance_rate = $5, description = $6, website = $7, logo_url = $8,
+          application_procedure = $9, eligibility_requirements = $10
+      WHERE id = $11
     `, [
       data.name, data.ranking, data.tuitionFeeMin, data.tuitionFeeMax,
-      data.acceptanceRate, data.description, data.website, data.logoUrl, univId
+      data.acceptanceRate, data.description, data.website, data.logoUrl,
+      data.applicationProcedure || '', data.eligibilityRequirements || '',
+      univId
     ]);
 
     revalidatePath('/uni-admin/dashboard');

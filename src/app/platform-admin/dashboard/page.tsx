@@ -6,7 +6,7 @@ import {
   Users, Landmark, Award, MessageSquare, Loader2, Compass, Activity,
   Megaphone, FileSpreadsheet, Search, UserCheck, UserX, AlertCircle,
   Calendar, Send, Filter, ShieldAlert, Sparkles, CheckCircle2, ChevronRight,
-  Plus, X, Trash2
+  Plus, X, Trash2, FileText
 } from 'lucide-react';
 import { getCurrentUser } from '@/app/actions/auth';
 import { 
@@ -19,6 +19,19 @@ import {
   deletePlatformUser
 } from '@/app/actions/platformAdmin';
 import { 
+  getPartnerRegistrations, 
+  approvePartnerRegistration, 
+  rejectPartnerRegistration 
+} from '@/app/actions/adminActions';
+import { 
+  getPendingUpdates, 
+  approvePendingUpdate, 
+  rejectPendingUpdate, 
+  editAndApprovePendingUpdate, 
+  getAIActivityLogs, 
+  getSecurityAuditLogs 
+} from '@/app/actions/adminAutomation';
+import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   BarChart, Bar, Cell
 } from 'recharts';
@@ -28,10 +41,21 @@ const COLORS = ['#0d9488', '#06b6d4', '#10b981', '#fbbf24', '#f87171'];
 export default function PlatformAdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'broadcast' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'approvals' | 'broadcast' | 'reports' | 'updates' | 'logs'>('overview');
   const [data, setData] = useState<any>(null);
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
   const [detailedData, setDetailedData] = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Automation & Logs State
+  const [pendingUpdates, setPendingUpdates] = useState<any[]>([]);
+  const [aiActivityLogs, setAiActivityLogs] = useState<any[]>([]);
+  const [securityAuditLogs, setSecurityAuditLogs] = useState<any[]>([]);
+  const [selectedUpdate, setSelectedUpdate] = useState<any>(null);
+  const [editedData, setEditedData] = useState<string>('');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +77,35 @@ export default function PlatformAdminDashboard() {
   const [createRole, setCreateRole] = useState<'platform_admin' | 'uni_admin' | 'business'>('uni_admin');
   const [createUniId, setCreateUniId] = useState<number | undefined>(undefined);
   const [submittingCreate, setSubmittingCreate] = useState(false);
+
+  // Verification Documents modal state
+  const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState<any>(null);
+  const [selectedDocsEntity, setSelectedDocsEntity] = useState('');
+
+  const handleOpenDocs = (reg: any) => {
+    const docs = reg.uploaded_documents || {};
+    let parsedPath: any = {};
+    
+    if (typeof docs.accreditation_docs_path === 'string') {
+      try {
+        parsedPath = JSON.parse(docs.accreditation_docs_path);
+      } catch (e) {
+        parsedPath = { raw_path: docs.accreditation_docs_path };
+      }
+    } else if (docs.accreditation_docs_path) {
+      parsedPath = docs.accreditation_docs_path;
+    }
+
+    setSelectedDocs({
+      licenseNumber: docs.license_number || 'N/A',
+      contactNumber: parsedPath.contact_number || parsedPath.phone || 'N/A',
+      certificate: parsedPath.accreditation_certificate || parsedPath.uploaded_file || 'N/A',
+      certificateDataUrl: parsedPath.accreditation_certificate_data || null
+    });
+    setSelectedDocsEntity(reg.entity_name);
+    setIsDocsModalOpen(true);
+  };
 
   // Export state
   const [exportingType, setExportingType] = useState<string | null>(null);
@@ -102,12 +155,88 @@ export default function PlatformAdminDashboard() {
         setCreateUniId(detailed.universities[0].id);
       }
     }
+
+    const regs = await getPartnerRegistrations();
+    setRegistrations(regs || []);
+
+    const updates = await getPendingUpdates();
+    setPendingUpdates(updates || []);
+
+    const aiLogs = await getAIActivityLogs();
+    setAiActivityLogs(aiLogs || []);
+
+    const secLogs = await getSecurityAuditLogs();
+    setSecurityAuditLogs(secLogs || []);
+
     setLoading(false);
   };
 
   useEffect(() => {
     loadAllData();
   }, [router]);
+
+  const handleApproveUpdate = async (updateId: number) => {
+    setActionLoadingId(updateId);
+    const res = await approvePendingUpdate(updateId);
+    if (res.success) {
+      setFeedback({ type: 'success', text: 'AI update successfully approved and applied to database!' });
+      const updates = await getPendingUpdates();
+      setPendingUpdates(updates || []);
+      const secLogs = await getSecurityAuditLogs();
+      setSecurityAuditLogs(secLogs || []);
+      loadAllData();
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'Failed to approve update.' });
+    }
+    setActionLoadingId(null);
+    setTimeout(() => setFeedback(null), 4500);
+  };
+
+  const handleRejectUpdate = async (updateId: number) => {
+    setActionLoadingId(updateId);
+    const res = await rejectPendingUpdate(updateId);
+    if (res.success) {
+      setFeedback({ type: 'success', text: 'AI update has been rejected.' });
+      const updates = await getPendingUpdates();
+      setPendingUpdates(updates || []);
+      const secLogs = await getSecurityAuditLogs();
+      setSecurityAuditLogs(secLogs || []);
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'Failed to reject update.' });
+    }
+    setActionLoadingId(null);
+    setTimeout(() => setFeedback(null), 4500);
+  };
+
+  const handleOpenEditModal = (update: any) => {
+    setSelectedUpdate(update);
+    setEditedData(JSON.stringify(update.new_data, null, 2));
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditUpdate = async () => {
+    if (!selectedUpdate) return;
+    setActionLoadingId(selectedUpdate.id);
+    try {
+      const parsedData = JSON.parse(editedData);
+      const res = await editAndApprovePendingUpdate(selectedUpdate.id, parsedData);
+      if (res.success) {
+        setFeedback({ type: 'success', text: 'AI update successfully edited, approved and applied!' });
+        setIsEditModalOpen(false);
+        const updates = await getPendingUpdates();
+        setPendingUpdates(updates || []);
+        const secLogs = await getSecurityAuditLogs();
+        setSecurityAuditLogs(secLogs || []);
+        loadAllData();
+      } else {
+        setFeedback({ type: 'error', text: res.error || 'Failed to apply update.' });
+      }
+    } catch (e: any) {
+      setFeedback({ type: 'error', text: 'Invalid JSON format. Please verify your edits.' });
+    }
+    setActionLoadingId(null);
+    setTimeout(() => setFeedback(null), 4500);
+  };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -276,6 +405,36 @@ export default function PlatformAdminDashboard() {
     setTimeout(() => setFeedback(null), 4000);
   };
 
+  const handleApproveRegistration = async (regId: number) => {
+    setApprovingId(regId);
+    const res = await approvePartnerRegistration(regId);
+    if (res.success) {
+      setFeedback({ type: 'success', text: 'Partner registration successfully approved and activated!' });
+      const regs = await getPartnerRegistrations();
+      setRegistrations(regs || []);
+      loadAllData();
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'Failed to approve registration.' });
+    }
+    setApprovingId(null);
+    setTimeout(() => setFeedback(null), 4500);
+  };
+
+  const handleRejectRegistration = async (regId: number) => {
+    setApprovingId(regId);
+    const res = await rejectPartnerRegistration(regId);
+    if (res.success) {
+      setFeedback({ type: 'success', text: 'Partner registration request has been rejected.' });
+      const regs = await getPartnerRegistrations();
+      setRegistrations(regs || []);
+      loadAllData();
+    } else {
+      setFeedback({ type: 'error', text: res.error || 'Failed to reject registration.' });
+    }
+    setApprovingId(null);
+    setTimeout(() => setFeedback(null), 4500);
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[80vh] bg-slate-50">
@@ -365,6 +524,9 @@ export default function PlatformAdminDashboard() {
           {[
             { id: 'overview', label: 'Overview Metrics', icon: Activity },
             { id: 'users', label: 'User Auditing', icon: Users },
+            { id: 'approvals', label: 'Partner Approvals', icon: UserCheck },
+            { id: 'updates', label: 'AI Updates Approval Queue', icon: Sparkles },
+            { id: 'logs', label: 'AI & Security Logs', icon: ShieldAlert },
             { id: 'broadcast', label: 'Notice Broadcaster', icon: Megaphone },
             { id: 'reports', label: 'Report Center', icon: FileSpreadsheet }
           ].map((tab) => {
@@ -599,6 +761,110 @@ export default function PlatformAdminDashboard() {
           </div>
         )}
 
+        {/* TAB 5: PARTNER APPROVALS */}
+        {activeTab === 'approvals' && (
+          <div className="space-y-6 animate-[fadeIn_0.35s_ease-out]">
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wide">
+                    Partner Registration Requests
+                  </h3>
+                  <p className="text-[10.5px] text-slate-400 mt-1">
+                    Approve or verify registration credentials submitted by university administrators and business agencies.
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-450 bg-slate-100 px-2 py-0.5 rounded">
+                  {registrations.length} total
+                </span>
+              </div>
+
+              {registrations.length === 0 ? (
+                <div className="text-center py-16 text-slate-400 font-bold text-xs">
+                  No registration requests found in the system.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-4 px-6">Entity / Institution Name</th>
+                        <th className="py-4 px-6">Partner Type</th>
+                        <th className="py-4 px-6">Account Email</th>
+                        <th className="py-4 px-6">Status</th>
+                        <th className="py-4 px-6">Verification Documents</th>
+                        <th className="py-4 px-6 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                      {registrations.map((reg: any) => (
+                        <tr key={reg.id} className="hover:bg-slate-50/50 transition-all">
+                          <td className="py-4 px-6">
+                            <span className="font-extrabold text-slate-900 text-sm">{reg.entity_name}</span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                              reg.partner_type === 'university' 
+                                ? 'bg-blue-100 text-blue-700' 
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {reg.partner_type}
+                              {reg.category ? ` (${reg.category.replace('_', ' ')})` : ''}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-slate-500">
+                            {reg.user_email}
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                              reg.status === 'verified' ? 'bg-emerald-100 text-emerald-800' :
+                              reg.status === 'rejected' ? 'bg-rose-100 text-rose-800' :
+                              'bg-amber-100 text-amber-800'
+                            }`}>
+                              {reg.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6">
+                            <button
+                              onClick={() => handleOpenDocs(reg)}
+                              className="text-teal-dark hover:underline font-bold text-[10.5px]"
+                            >
+                              View Licenses & Docs
+                            </button>
+                          </td>
+                          <td className="py-4 px-6 text-right space-x-2">
+                            {reg.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => handleApproveRegistration(reg.id)}
+                                  disabled={approvingId === reg.id}
+                                  className="px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 font-bold text-[10.5px] cursor-pointer"
+                                >
+                                  {approvingId === reg.id ? 'Approving...' : 'Approve'}
+                                </button>
+                                <button
+                                  onClick={() => handleRejectRegistration(reg.id)}
+                                  disabled={approvingId === reg.id}
+                                  className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold text-[10.5px] cursor-pointer"
+                                >
+                                  {approvingId === reg.id ? 'Rejecting...' : 'Reject'}
+                                </button>
+                              </>
+                            )}
+                            {reg.status !== 'pending' && (
+                              <span className="text-[10px] text-slate-400 italic">No action needed</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* TAB 3: BROADCASTER NODE */}
         {activeTab === 'broadcast' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-[fadeIn_0.35s_ease-out]">
@@ -790,6 +1056,245 @@ export default function PlatformAdminDashboard() {
           </div>
         )}
 
+        {/* TAB: AI UPDATES APPROVAL QUEUE */}
+        {activeTab === 'updates' && (
+          <div className="space-y-6 animate-[fadeIn_0.35s_ease-out]">
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                    <Sparkles className="h-4.5 w-4.5 text-teal-dark" />
+                    <span>AI Background Automation Updates Queue</span>
+                  </h3>
+                  <p className="text-[10.5px] text-slate-400 mt-1">
+                    Review, edit, and approve updates gathered from official public sources by autonomous AI agents.
+                  </p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-450 bg-slate-100 px-2 py-0.5 rounded">
+                  {pendingUpdates.length} pending
+                </span>
+              </div>
+
+              {pendingUpdates.length === 0 ? (
+                <div className="text-center py-16 text-slate-400 font-bold text-xs">
+                  No pending updates found in the queue.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pendingUpdates.map((update) => {
+                    const isExpanded = selectedUpdate?.id === update.id;
+                    return (
+                      <div 
+                        key={update.id} 
+                        className={`border rounded-2xl transition-all duration-200 ${
+                          isExpanded 
+                            ? 'border-teal-dark/30 bg-teal-50/5' 
+                            : 'border-slate-200 hover:border-slate-350 hover:bg-slate-50/30'
+                        }`}
+                      >
+                        {/* Summary Row */}
+                        <div 
+                          onClick={() => setSelectedUpdate(isExpanded ? null : update)}
+                          className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 cursor-pointer select-none"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-100 text-[10px] font-bold text-teal-700 capitalize">
+                                {update.table_name}
+                              </span>
+                              <span className="text-slate-500 text-xs font-medium">
+                                Record ID: {update.record_id || 'NEW'}
+                              </span>
+                            </div>
+                            <h4 className="font-extrabold text-slate-800 text-sm">
+                              {update.new_data.name || update.new_data.title || update.new_data.provider || 'Unnamed Record'}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center gap-4 ml-auto">
+                            <div className="text-right">
+                              <span className="text-[10px] text-slate-400 block font-bold uppercase tracking-wider">Confidence Score</span>
+                              <span className={`text-sm font-extrabold ${
+                                update.confidence_score >= 85 ? 'text-emerald-600' :
+                                update.confidence_score >= 70 ? 'text-amber-600' : 'text-rose-600'
+                              }`}>
+                                {update.confidence_score}%
+                              </span>
+                            </div>
+                            <ChevronRight className={`h-5 w-5 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                          </div>
+                        </div>
+
+                        {/* Detailed Comparison & Actions */}
+                        {isExpanded && (
+                          <div className="p-4 border-t border-slate-100 bg-white rounded-b-2xl space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Old Values */}
+                              <div className="space-y-2">
+                                <span className="text-[10px] text-slate-450 uppercase block font-bold tracking-wider">Old Database Value</span>
+                                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-[11px] text-slate-650 h-64 overflow-y-auto">
+                                  {update.old_data ? (
+                                    <pre>{JSON.stringify(update.old_data, null, 2)}</pre>
+                                  ) : (
+                                    <span className="text-slate-400 italic">No existing record (Proposed New Entry)</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* New Values */}
+                              <div className="space-y-2">
+                                <span className="text-[10px] text-teal-dark uppercase block font-bold tracking-wider">Proposed New Value</span>
+                                <div className="p-4 bg-teal-50/10 border border-teal-100 rounded-xl font-mono text-[11px] text-slate-700 h-64 overflow-y-auto">
+                                  <pre>{JSON.stringify(update.new_data, null, 2)}</pre>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action Row */}
+                            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4">
+                              <button
+                                onClick={() => handleRejectUpdate(update.id)}
+                                disabled={actionLoadingId === update.id}
+                                className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 bg-rose-50 hover:bg-rose-100 font-bold text-xs cursor-pointer"
+                              >
+                                {actionLoadingId === update.id ? 'Loading...' : 'Reject Update'}
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditModal(update)}
+                                disabled={actionLoadingId === update.id}
+                                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100 font-bold text-xs cursor-pointer"
+                              >
+                                Edit Fields
+                              </button>
+                              <button
+                                onClick={() => handleApproveUpdate(update.id)}
+                                disabled={actionLoadingId === update.id}
+                                className="px-4 py-2 rounded-xl bg-teal-dark hover:bg-teal-dark/95 text-white font-bold text-xs cursor-pointer"
+                              >
+                                {actionLoadingId === update.id ? 'Approving...' : 'Approve & Apply'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: AI & SECURITY LOGS */}
+        {activeTab === 'logs' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-[fadeIn_0.35s_ease-out]">
+            {/* AI Scraper Logs */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wide">AI Scraper Execution Logs</h3>
+                  <p className="text-[10.5px] text-slate-400 mt-1">Review background web scraper runs and scheduler outputs.</p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-450 bg-slate-100 px-2 py-0.5 rounded">
+                  {aiActivityLogs.length} entries
+                </span>
+              </div>
+
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                {aiActivityLogs.length === 0 ? (
+                  <p className="text-center text-slate-400 py-16 font-bold text-xs">
+                    No background AI scraper runs logged yet.
+                  </p>
+                ) : (
+                  aiActivityLogs.map((log) => (
+                    <div 
+                      key={log.id} 
+                      className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                            log.success ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            {log.success ? 'Success' : 'Failed'}
+                          </span>
+                          <span className="font-extrabold text-slate-900 text-xs uppercase">{log.agent_name} Agent</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {new Date(log.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{' '}
+                          {new Date(log.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+                      <p className="text-[11.5px] text-slate-600 font-medium truncate">
+                        <strong className="text-slate-700">Source:</strong> {log.website}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 font-medium">
+                        <span>Collected: {log.records_collected}</span>
+                        <span>Updated: {log.records_updated}</span>
+                        <span>Time: {log.processing_time}s</span>
+                      </div>
+                      {log.failure_reason && (
+                        <p className="text-[11px] text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-100 mt-1 font-mono">
+                          {log.failure_reason}
+                        </p>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Security Audit Logs */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wide">Security Audit Logs</h3>
+                  <p className="text-[10.5px] text-slate-400 mt-1">Audit credentials accesses, system configurations, and moderator activities.</p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-450 bg-slate-100 px-2 py-0.5 rounded">
+                  {securityAuditLogs.length} entries
+                </span>
+              </div>
+
+              <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                {securityAuditLogs.length === 0 ? (
+                  <p className="text-center text-slate-400 py-16 font-bold text-xs">
+                    No security events logged yet.
+                  </p>
+                ) : (
+                  securityAuditLogs.map((log) => (
+                    <div 
+                      key={log.id} 
+                      className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                          log.event_type === 'failed_login' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                          log.event_type === 'login_attempt' ? 'bg-blue-100 text-blue-800' :
+                          log.event_type === 'admin_action' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-800'
+                        }`}>
+                          {log.event_type.replace('_', ' ')}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          {new Date(log.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}{' '}
+                          {new Date(log.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      </div>
+                      <p className="text-[11.5px] text-slate-800 font-bold leading-normal">
+                        {log.description}
+                      </p>
+                      <div className="flex justify-between items-center text-[10.5px] text-slate-500 font-medium pt-1">
+                        <span>IP: {log.ip_address}</span>
+                        {log.user_id && <span>User ID: {log.user_id}</span>}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        
       </div>
 
       {/* Create Credentials Modal */}
@@ -882,6 +1387,144 @@ export default function PlatformAdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Documents Modal */}
+      {isDocsModalOpen && selectedDocs && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md px-4">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl animate-[fadeIn_0.3s_ease-out] text-slate-800">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3 mb-5">
+              <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wide">
+                Credentials: {selectedDocsEntity}
+              </h3>
+              <button 
+                onClick={() => setIsDocsModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs font-semibold text-slate-700">
+              <div>
+                <span className="text-[10px] text-slate-450 uppercase block font-bold tracking-wider mb-1">Accreditation License Number</span>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 select-all">
+                  {selectedDocs.licenseNumber}
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-450 uppercase block font-bold tracking-wider mb-1">Uploaded Certificate File</span>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5 text-slate-800">
+                  <FileText className="h-5 w-5 text-teal-bright shrink-0" />
+                  <span className="font-medium truncate">{selectedDocs.certificate}</span>
+                  {selectedDocs.certificate !== 'N/A' && (
+                    <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-800 uppercase tracking-wider">
+                      Verified Upload
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {selectedDocs.certificateDataUrl && (
+                <div>
+                  <span className="text-[10px] text-slate-450 uppercase block font-bold tracking-wider mb-1">Certificate Preview</span>
+                  {selectedDocs.certificateDataUrl.startsWith('data:application/pdf') ? (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-slate-800">
+                      <span className="font-semibold text-slate-700">Accreditation PDF Document</span>
+                      <a 
+                        href={selectedDocs.certificateDataUrl} 
+                        download={selectedDocs.certificate || 'certificate.pdf'}
+                        className="px-3 py-1 bg-[#00A896] text-white font-bold rounded-lg hover:bg-teal-700 text-[10px] uppercase cursor-pointer"
+                      >
+                        Download PDF
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex flex-col items-center justify-center p-2 relative">
+                      <img 
+                        src={selectedDocs.certificateDataUrl} 
+                        alt="Accreditation Certificate Preview" 
+                        className="max-h-56 w-auto rounded-lg object-contain border border-slate-100 shadow-sm"
+                      />
+                      <a 
+                        href={selectedDocs.certificateDataUrl} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="mt-2 text-[10px] text-[#00A896] hover:underline font-bold"
+                      >
+                        Open Original Image in New Tab &rarr;
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <span className="text-[10px] text-slate-450 uppercase block font-bold tracking-wider mb-1">Contact Number</span>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium">
+                  {selectedDocs.contactNumber}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-5 mt-5 border-t border-slate-100">
+              <button
+                onClick={() => setIsDocsModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-850 transition-colors text-xs cursor-pointer shadow-sm"
+              >
+                Close Panel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Update Fields Modal */}
+      {isEditModalOpen && selectedUpdate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md px-4">
+          <div className="w-full max-w-2xl bg-white rounded-3xl p-6 border border-slate-200 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-md font-bold text-slate-900 border-b border-slate-100 pb-3 mb-5 uppercase tracking-wide flex items-center justify-between">
+              <span>Edit Proposed Fields ({selectedUpdate.table_name})</span>
+              <button 
+                onClick={() => setIsEditModalOpen(false)} 
+                className="text-slate-400 hover:text-slate-650 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-slate-500 mb-1.5 uppercase text-[10px] font-bold">Proposed JSON Data Payload</label>
+                <textarea
+                  value={editedData}
+                  onChange={(e) => setEditedData(e.target.value)}
+                  rows={15}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-teal-dark transition-all text-slate-800 font-mono text-[11px] leading-relaxed"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 cursor-pointer text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEditUpdate}
+                  disabled={actionLoadingId === selectedUpdate.id}
+                  className="glow-btn text-white font-bold px-5 py-2 rounded-xl flex items-center gap-1.5 cursor-pointer text-xs"
+                >
+                  {actionLoadingId === selectedUpdate.id ? 'Saving & Approving...' : 'Save & Approve Update'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

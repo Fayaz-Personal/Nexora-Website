@@ -157,13 +157,15 @@ async function migrate() {
         id SERIAL PRIMARY KEY,
         name VARCHAR(255) UNIQUE NOT NULL,
         country_id INTEGER REFERENCES countries(id) ON DELETE CASCADE,
-        logo_url VARCHAR(500),
+        logo_url TEXT,
         ranking INTEGER,
         tuition_fee_min DECIMAL(10, 2),
         tuition_fee_max DECIMAL(10, 2),
         acceptance_rate DECIMAL(5, 2),
         description TEXT,
         website VARCHAR(255),
+        application_procedure TEXT,
+        eligibility_requirements TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -460,17 +462,13 @@ async function migrate() {
 
     // Hash passwords for seed users
     const adminHash = await bcrypt.hash('adminpassword', 10);
-    const uniAdminHash = await bcrypt.hash('unipassword', 10);
     const studentHash = await bcrypt.hash('studentpassword', 10);
-    const businessHash = await bcrypt.hash('businesspassword', 10);
 
     // Insert Users
     const usersRes = await client.query(`
       INSERT INTO users (email, password_hash, role, is_verified) VALUES
       ('admin@nexora.com', '${adminHash}', 'platform_admin', TRUE),
       ('admin_access@nexora.com', '${adminHash}', 'platform_admin', TRUE),
-      ('uni@nexora.com', '${uniAdminHash}', 'uni_admin', TRUE),
-      ('business@nexora.com', '${businessHash}', 'business', TRUE),
       ('student@nexora.com', '${studentHash}', 'student', TRUE),
       ('ashwin@nexora.com', '${studentHash}', 'student', TRUE),
       ('sarah@nexora.com', '${studentHash}', 'student', TRUE),
@@ -479,8 +477,6 @@ async function migrate() {
     `);
 
     const adminId = usersRes.rows.find(u => u.role === 'platform_admin').id;
-    const uniAdminId = usersRes.rows.find(u => u.role === 'uni_admin').id;
-    const businessId = usersRes.rows.find(u => u.role === 'business').id;
     const studentId = usersRes.rows.find(u => u.role === 'student' && u.email === 'student@nexora.com').id;
     const ashwinId = usersRes.rows.find(u => u.role === 'student' && u.email === 'ashwin@nexora.com').id;
     const sarahId = usersRes.rows.find(u => u.role === 'student' && u.email === 'sarah@nexora.com').id;
@@ -551,178 +547,8 @@ async function migrate() {
     `);
     const profileId = studentProfileRes.rows.find(r => r.name === 'John Doe').id;
 
-    // Seed Universities
-    const univsRes = await client.query(`
-      INSERT INTO universities (name, country_id, logo_url, ranking, tuition_fee_min, tuition_fee_max, acceptance_rate, description, website) VALUES
-      ('Technical University of Munich', ${germanyId}, '/images/univ/tum.png', 37, 0.00, 6000.00, 8.00, 'TUM is one of Europe''s leading research universities, highly renowned for engineering, computer science, and technology.', 'https://www.tum.de'),
-      ('Stanford University', ${usaId}, '/images/univ/stanford.png', 3, 50000.00, 65000.00, 4.00, 'Stanford is a global power-house of technology, entrepreneurship, and research located in the heart of Silicon Valley.', 'https://www.stanford.edu'),
-      ('University of Oxford', ${ukId}, '/images/univ/oxford.png', 4, 30000.00, 48000.00, 15.00, 'The oldest university in the English-speaking world, Oxford offers world-class degrees with highly prestigious college system.', 'https://www.ox.ac.uk'),
-      ('University of Toronto', ${canadaId}, '/images/univ/toronto.png', 21, 25000.00, 42000.00, 43.00, 'U of T is Canada''s top research university, located in a highly multicultural urban environment.', 'https://www.utoronto.ca'),
-      ('University of Melbourne', ${australiaId}, '/images/univ/melbourne.png', 14, 28000.00, 38000.00, 70.00, 'A leading global university in Australia, famed for academic excellence and vibrant cultural campus life.', 'https://www.unimelb.edu.au')
-      RETURNING id, name;
-    `);
-
-    const tumId = univsRes.rows.find(u => u.name === 'Technical University of Munich').id;
-    const stanfordId = univsRes.rows.find(u => u.name === 'Stanford University').id;
-    const oxfordId = univsRes.rows.find(u => u.name === 'University of Oxford').id;
-    const torontoId = univsRes.rows.find(u => u.name === 'University of Toronto').id;
-    const melbId = univsRes.rows.find(u => u.name === 'University of Melbourne').id;
-
-    // Seed Uni Admin Profile
-    await client.query(`
-      INSERT INTO uni_admin_profiles (user_id, university_id) VALUES
-      (${uniAdminId}, ${tumId})
-    `);
-
-    // Seed Announcements
-    await client.query(`
-      INSERT INTO announcements (title, message, target_role) VALUES
-      ('Welcome to Nexora AI!', 'We have successfully launched the AI roadmap advisor counselor. Start personalizing your profile today!', 'student'),
-      ('Important Deadline Reminder', 'Standardized test scores (GRE/IELTS) must be submitted by October 31st for Fall applications.', 'student'),
-      ('University Management Live', 'University partners can now upload course curriculum fees and handle candidate intake statistics.', 'uni_admin'),
-      ('Business Partner Services Active', 'Accommodations, visa checklists, and flight travel assistance are open for business partners.', 'business')
-    `);
-
-    // Seed Courses
-    const coursesRes = await client.query(`
-      INSERT INTO courses (university_id, name, degree_type, department, duration, fees, description) VALUES
-      (${tumId}, 'MSc in Informatics (Computer Science)', 'MSc', 'Computer Science', '2 Years', 0.00, 'Advanced course covering Software Engineering, AI, Databases, and Theory. Program fees are essentially free except for minor administration fees.'),
-      (${tumId}, 'MSc in Data Engineering and Analytics', 'MSc', 'Data Science', '2 Years', 0.00, 'Focuses on designing, building, and deploying large-scale data storage, streaming, and ML platforms.'),
-      (${stanfordId}, 'MS in Computer Science (AI Specialization)', 'MS', 'Computer Science', '2 Years', 58000.00, 'World-renowned program training leaders in machine learning, vision, NLP, and robotics.'),
-      (${stanfordId}, 'MBA (Master of Business Administration)', 'MBA', 'Business', '2 Years', 74000.00, 'Premier management course focused on entrepreneurship, venture capital, leadership, and global business.'),
-      (${oxfordId}, 'MSc in Advanced Computer Science', 'MSc', 'Computer Science', '1 Year', 36000.00, 'Intense 1-year program providing deep mathematical foundations of programming, formal methods, and algorithms.'),
-      (${torontoId}, 'MSc in Applied Computing', 'MSc', 'Computer Science', '16 Months', 34000.00, 'Professional program combined with an 8-month industrial research internship in tech labs.'),
-      (${melbId}, 'Master of Information Technology', 'MSc', 'Information Technology', '2 Years', 32000.00, 'Prepares graduates for careers in cloud computing, cybersecurity, database design, and software engineering.')
-      RETURNING id, name;
-    `);
-
-    const tumCsId = coursesRes.rows.find(c => c.name === 'MSc in Informatics (Computer Science)').id;
-    const stanfordCsId = coursesRes.rows.find(c => c.name === 'MS in Computer Science (AI Specialization)').id;
-
-    // Seed Scholarships
-    await client.query(`
-      INSERT INTO scholarships (name, provider, type, amount, eligibility_criteria, deadline, coverage) VALUES
-      ('DAAD Scholarship (EPOS)', 'German Academic Exchange Service', 'government', 'Full Tuition + €934/month allowance', 'Requires a Bachelor''s degree with at least 2 years of professional experience.', '2026-10-31', 'Full Tuition, Monthly Stipend, Travel Expenses, Health Insurance'),
-      ('Knight-Hennessy Scholars', 'Stanford University', 'university', 'Full funding including tuition and living stipend', 'Open to students applying to any graduate program at Stanford who show leadership and academic excellence.', '2026-10-14', 'Full Tuition, Living Allowance, Academic Travel Grant'),
-      ('Clarendon Fund Scholarships', 'University of Oxford', 'university', 'Full Tuition Fees + £18,622/year stipend', 'Automatically considered based on academic excellence and potential in graduate application.', '2026-01-22', 'Full Tuition, Annual Living Stipend'),
-      ('Lester B. Pearson International Scholarship', 'University of Toronto', 'university', 'Full Tuition, Books, Incidental Fees, Residence Support', 'Exceptional international undergraduate students showing academic and creative excellence.', '2026-01-15', 'Full tuition, room and board, student fees'),
-      ('Rotary Foundation Global Grants', 'Rotary International', 'private', '$30,000 USD minimum', 'Requires program to align with Rotary''s areas of focus (e.g. education, health, economic development).', '2026-03-31', 'Flat grant towards tuition, housing, flights');
-    `);
-
-    // Seed Entrance Exams
-    const examsRes = await client.query(`
-      INSERT INTO entrance_exams (name, full_name, syllabus, registration_link, test_dates, resources_json) VALUES
-      ('GRE', 'Graduate Record Examinations', 'Verbal Reasoning, Quantitative Reasoning, Analytical Writing', 'https://www.ets.org/gre', 
-       '["Multiple dates weekly year-round"]'::jsonb,
-       '{"official_guide": "ETS GRE Official Prep Book", "free_tests": "POWERPREP Practice Tests Online"}'::jsonb),
-      ('IELTS', 'International English Language Testing System', 'Listening, Reading, Writing, Speaking', 'https://www.ielts.org',
-       '["Several dates every month"]'::jsonb,
-       '{"practice_material": "IELTS Prep App", "official_book": "Cambridge IELTS Practice series"}'::jsonb),
-      ('TOEFL', 'Test of English as a Foreign Language', 'Reading, Listening, Speaking, Writing', 'https://www.ets.org/toefl',
-       '["Multiple dates weekly"]'::jsonb,
-       '{"software": "TOEFL Go! App", "mocks": "TOEFL iBT Free Practice Test"}'::jsonb),
-      ('GMAT', 'Graduate Management Admission Test', 'Quantitative, Verbal, Integrated Reasoning, Analytical Writing', 'https://www.mba.com',
-       '["On-demand test centers and online"]'::jsonb,
-       '{"software": "GMAT Official Starter Kit + Free Practice Exams"}'::jsonb)
-      RETURNING id, name;
-    `);
-
-    const greId = examsRes.rows.find(e => e.name === 'GRE').id;
-    const ieltsId = examsRes.rows.find(e => e.name === 'IELTS').id;
-
-    // Course Exam Requirements
-    await client.query(`
-      INSERT INTO course_exam_requirements (course_id, exam_id, min_score) VALUES
-      (${tumCsId}, ${ieltsId}, '6.5'),
-      (${stanfordCsId}, ${greId}, '325 (Quant: 165+)'),
-      (${stanfordCsId}, ${ieltsId}, '7.5');
-    `);
-
-    // Seed Living Costs
-    await client.query(`
-      INSERT INTO living_costs (country_id, rent, food, transport, insurance, miscellaneous) VALUES
-      (${germanyId}, 450.00, 250.00, 60.00, 110.00, 80.00),
-      (${usaId}, 850.00, 350.00, 100.00, 150.00, 100.00),
-      (${ukId}, 650.00, 300.00, 90.00, 80.00, 80.00),
-      (${canadaId}, 600.00, 280.00, 100.00, 70.00, 80.00),
-      (${australiaId}, 700.00, 320.00, 90.00, 90.00, 90.00);
-    `);
-
-    // Seed Accommodations
-    await client.query(`
-      INSERT INTO accommodations (country_id, city_name, type, rent, distance_to_univ, availability, facilities, title, description) VALUES
-      (${germanyId}, 'Munich', 'student housing', 380.00, '15 mins by U-Bahn', true, ARRAY['Wifi', 'Heating', 'Laundry Room', 'Bicycle storage'], 'Olympic Village Housing', 'Historic student housing compound offering small studio rooms, high-speed campus wifi, and social spaces.'),
-      (${germanyId}, 'Munich', 'apartments', 750.00, '5 mins walk', true, ARRAY['Kitchenette', 'Fully Furnished', 'Balcony'], 'Maxvorstadt Cozy Flat', 'A fully furnished 1-room apartment located right next to the TUM main campus.'),
-      (${usaId}, 'Stanford', 'shared rooms', 900.00, '10 mins cycle', true, ARRAY['Gym access', 'Shared kitchen', 'Utilities included'], 'Palo Alto Shared Home', 'Affordable student housing with utility bills included, sharing with other Stanford grads.'),
-      (${ukId}, 'London', 'hostels', 550.00, '30 mins bus', true, ARRAY['24h reception', 'Study pods', 'Ensuite bath'], 'Chapter Kings Cross Stu', 'High-end student accommodation facility featuring study rooms, social events, and gyms.');
-    `);
-
-    // Seed Visas
-    await client.query(`
-      INSERT INTO visas (country_id, requirements, documents_required, timeline, fee, checklist_json) VALUES
-      (${germanyId}, 'Apply at the local German Embassy or Consulate. Requires full enrollment letter, blocked account setup, and German public health insurance.',
-       ARRAY['Valid Passport', 'Biometric Photos', 'University Admission Letter', 'Proof of Bloocked Account (€11,908)', 'Academic Transcripts', 'Health Insurance Certificate'],
-       '6 - 12 Weeks', 75.00,
-       '{"steps": ["Set up appointment at embassy", "Open blocked account", "Transfer €11,908", "Gather academic records", "Obtain travel health insurance", "Attend interview"]}'::jsonb),
-      (${usaId}, 'Obtain I-20, pay SEVIS I-901 fee, fill Form DS-160, and schedule a visa interview at the consulate.',
-       ARRAY['Valid Passport', 'Form I-20', 'DS-160 Confirmation Page', 'Visa Fee Payment Receipt', 'SEVIS Fee Receipt', 'Financial Statements'],
-       '3 - 6 Weeks', 185.00,
-       '{"steps": ["Receive Form I-20", "Pay SEVIS Fee", "Complete DS-160 online", "Book visa interview", "Assemble financial documents", "Attend consulate interview"]}'::jsonb);
-    `);
-
-    // Seed Flights
-    await client.query(`
-      INSERT INTO flights (origin, destination_country_id, est_cost, checklist_json) VALUES
-      ('New Delhi (DEL)', ${germanyId}, 450.00, '{"tips": ["Book 2-3 months early", "Check student baggage offers (often 40kg)", "Transit transit requirements"]}'::jsonb),
-      ('New Delhi (DEL)', ${usaId}, 850.00, '{"tips": ["Book flights via middle-east for baggage", "Keep I-20 and visa in hand luggage", "Confirm port of entry details"]}'::jsonb);
-    `);
-
-    // Seed Alumni
-    await client.query(`
-      INSERT INTO alumni (university_id, name, course_studied, graduation_year, company, job_title, testimonial) VALUES
-      (${tumId}, 'Sarah Jenkins', 'MSc in Informatics', 2024, 'Google', 'AI Research Engineer', 'TUM gave me deep algorithmic knowledge and direct industry connections that helped me secure my dream AI job right after graduating.'),
-      (${stanfordId}, 'Alex Rivera', 'MBA', 2023, 'Sequoia Capital', 'Associate', 'The startup ecosystem and peer network at Stanford Stanford Graduate School of Business changed my professional trajectory forever.');
-    `);
-
-    // Saved Items
-    await client.query(`
-      INSERT INTO student_saved_universities (student_id, university_id) VALUES (${profileId}, ${tumId});
-      INSERT INTO student_saved_courses (student_id, course_id) VALUES (${profileId}, ${tumCsId});
-    `);
-
-    // Chatbot conversations and messages
-    const convRes = await client.query(`
-      INSERT INTO chatbot_conversations (student_id, title) VALUES
-      (${profileId}, 'AI Admission Chance Germany')
-      RETURNING id;
-    `);
-    const convId = convRes.rows[0].id;
-
-    await client.query(`
-      INSERT INTO chatbot_messages (conversation_id, sender, content) VALUES
-      (${convId}, 'user', 'What are my chances of studying Computer Science at TUM Germany?'),
-      (${convId}, 'bot', 'Your chances are very high! You have a CGPA of 3.85, which matches TUM''s competitive standards. Also, they require an IELTS score of 6.5 or above, which is well within your reach. Germany is highly recommended due to €0 tuition fees.');
-    `);
-
-    // Admission predictions
-    await client.query(`
-      INSERT INTO admission_predictions (student_id, university_id, probability, status) VALUES
-      (${profileId}, ${tumId}, 85, 'safe'),
-      (${profileId}, ${stanfordId}, 32, 'dream');
-    `);
-
-    // Roadmap seed
-    await client.query(`
-      INSERT INTO student_roadmaps (student_id, steps_json) VALUES
-      (${profileId}, '[
-        {"title": "Profile Optimization", "status": "completed", "date": "2026-06-01", "desc": "Update academic history and choose preferred countries."},
-        {"title": "Entrance Exams", "status": "in_progress", "date": "2026-08-15", "desc": "Prepare for IELTS and GRE. Book test slots."},
-        {"title": "University Applications", "status": "pending", "date": "2026-11-01", "desc": "Submit documents and Statement of Purpose (SOP) to TUM."},
-        {"title": "Scholarship Filing", "status": "pending", "date": "2026-12-15", "desc": "Apply for DAAD EPOS and university awards."},
-        {"title": "Visa Documents & Blocked Account", "status": "pending", "date": "2027-03-01", "desc": "Transfer €11,908 to blocked account and schedule embassy appointment."},
-        {"title": "Travel & Enrollment", "status": "pending", "date": "2027-09-01", "desc": "Book flights, secure student accommodation, and enroll in classes."}
-      ]'::jsonb);
-    `);
+    // Universities, courses, and university-linked scholarships are dynamically added by university users and approved by admins.
+    console.log('Skipping mock university, course, and scholarship seeding to maintain real, dynamic data.');
 
     // Seed Funding Providers
     console.log('Seeding funding providers...');

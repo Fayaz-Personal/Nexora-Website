@@ -40,6 +40,7 @@ export default function OnboardingPage() {
     // Step 3: Preferences
     preferredDegree: 'MS',
     preferredCourse: 'Computer Science',
+    preferredCountries: 'Germany, United States',
     targetUniversity: '',
 
     // Step 4: Portfolios
@@ -70,6 +71,7 @@ export default function OnboardingPage() {
           cgpa: studProfile.cgpa !== null && studProfile.cgpa !== undefined ? String(studProfile.cgpa) : '3.0',
           preferredDegree: studProfile.degree || 'MS',
           department: studProfile.department || 'Computer Science',
+          preferredCountries: studProfile.preferred_countries ? studProfile.preferred_countries.join(', ') : 'Germany, United States',
           linkedinUrl: studProfile.linkedin_url || '',
           githubUrl: studProfile.github_url || '',
           portfolioUrl: studProfile.portfolio_url || ''
@@ -127,6 +129,7 @@ export default function OnboardingPage() {
       return (
         formData.preferredDegree.trim() !== '' &&
         formData.preferredCourse.trim() !== '' &&
+        formData.preferredCountries.trim() !== '' &&
         formData.targetUniversity.trim() !== ''
       );
     }
@@ -158,8 +161,15 @@ export default function OnboardingPage() {
     if (!profile) return;
     setSubmitting(true);
     
+    // Parse preferred countries comma-separated string to string array
+    const countriesArray = formData.preferredCountries.split(',').map(c => c.trim()).filter(Boolean);
+    const dataToSend = {
+      ...formData,
+      countries: countriesArray
+    };
+    
     // Save onboarding details to database
-    const res = await saveStudentOnboarding(profile.id, formData);
+    const res = await saveStudentOnboarding(profile.id, dataToSend);
     if (res.success) {
       // Clear draft storage
       localStorage.removeItem(`nexora_onboarding_draft_${profile.id}`);
@@ -482,6 +492,18 @@ export default function OnboardingPage() {
                     value={formData.preferredCourse}
                     onChange={(e) => setFormData({ ...formData, preferredCourse: e.target.value })}
                     placeholder="e.g. Data Science"
+                    className="w-full bg-white border border-slate-200 rounded-xl text-sm text-slate-800 p-3.5 focus:outline-none focus:border-teal-dark focus:ring-1 focus:ring-teal-dark placeholder-slate-400 transition-all"
+                    required
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-700 uppercase mb-1.5">Preferred Country to Study * (comma separated)</label>
+                  <input
+                    type="text"
+                    value={formData.preferredCountries}
+                    onChange={(e) => setFormData({ ...formData, preferredCountries: e.target.value })}
+                    placeholder="e.g. Germany, United States, Canada"
                     className="w-full bg-white border border-slate-200 rounded-xl text-sm text-slate-800 p-3.5 focus:outline-none focus:border-teal-dark focus:ring-1 focus:ring-teal-dark placeholder-slate-400 transition-all"
                     required
                   />

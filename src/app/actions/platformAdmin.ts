@@ -15,12 +15,11 @@ export async function getPlatformStats() {
     const scholarships = await query('SELECT COUNT(*) FROM scholarships');
     const chats = await query('SELECT COUNT(*) FROM ai_chat_logs');
 
-    // Aggregate monthly search activity/events
     const eventHistory = await query(`
-      SELECT TO_CHAR(created_at, 'YYYY-MM-DD') as date, COUNT(*) as count
+      SELECT TO_CHAR(created_at, 'Mon DD') as date, created_at::date as date_day, COUNT(*) as count
       FROM analytics_events
-      GROUP BY date
-      ORDER BY date ASC
+      GROUP BY date_day, date
+      ORDER BY date_day ASC
       LIMIT 15
     `);
 
