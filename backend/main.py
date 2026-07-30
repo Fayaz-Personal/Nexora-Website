@@ -1,7 +1,10 @@
 import argparse
 import sys
+import os
 import logging
-from apscheduler.schedulers.blocking import BlockingScheduler
+import threading
+from flask import Flask, jsonify
+from apscheduler.schedulers.background import BackgroundScheduler
 from agents.university_agent import run_university_agent
 from agents.scholarship_agent import run_scholarship_agent
 from agents.accommodation_agent import run_accommodation_agent
@@ -15,6 +18,18 @@ from agents.currency_agent import run_currency_agent
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("SchedulerMain")
+
+# ── Flask health-check server ──────────────────────────────────────────────────
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    return jsonify({"status": "ok", "service": "Nexora AI Agents Scheduler"})
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "healthy"}), 200
+# ──────────────────────────────────────────────────────────────────────────────
 
 def run_all_agents():
     logger.info("Executing all AI agents sequentially...")
@@ -31,8 +46,9 @@ def run_all_agents():
     logger.info("All AI agents execution completed!")
 
 def start_scheduler():
-    scheduler = BlockingScheduler()
-    
+    # Use BackgroundScheduler so it doesn't block — Flask runs in the main thread
+    scheduler = BackgroundScheduler()
+
     # 0. Currency Agent (Daily - Base cache)
     scheduler.add_job(run_currency_agent, 'interval', days=1, name='currency_agent')
     # 1. University Agent (Weekly)
@@ -53,12 +69,10 @@ def start_scheduler():
     scheduler.add_job(run_travel_agent, 'interval', days=1, name='travel_agent')
     # 9. Visa Agent (Weekly)
     scheduler.add_job(run_visa_agent, 'interval', weeks=1, name='visa_agent')
-    
-    logger.info("APScheduler initialized and running...")
-    try:
-        scheduler.start()
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Scheduler shutting down...")
+
+    scheduler.start()
+    logger.info("APScheduler (background) initialized and running...")
+    return scheduler
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Nexora AI Agents Automation Service")
@@ -69,4 +83,12 @@ if __name__ == "__main__":
         run_all_agents()
         sys.exit(0)
     else:
-        start_scheduler()
+        # Start scheduler in background, then serve Flask for Render's health checks
+        scheduler = start_scheduler()
+        port = int(os.environ.get("PORT", 8000))
+        logger.info(f"Starting Flask health server on port {port}...")
+        try:
+            app.run(host="0.0.0.0", port=port)
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Shutting down...")
+            scheduler.shutdown()
