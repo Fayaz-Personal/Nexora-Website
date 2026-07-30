@@ -6,6 +6,9 @@ import AIChatbot from '@/components/AIChatbot';
 import { CurrencyProvider } from '@/components/CurrencyContext';
 import { ToastProvider } from '@/components/ToastContext';
 
+// This layout uses cookies() for auth — force dynamic rendering across all pages
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: "Nexora | AI-Powered Higher Studies Guidance Platform",
   description: "Dream Big. Study Anywhere. Explore universities, scholarships, accommodations, visa checklists, and plan your global education roadmap with the assistance of Llama-3 AI advisor.",
