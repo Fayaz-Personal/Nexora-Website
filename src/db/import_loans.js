@@ -1,4 +1,4 @@
-brconst fs = require('fs');
+const fs = require('fs');
 const { Client } = require('pg');
 
 let connectionString = 'postgresql://postgres.moolnigpzrcdgbuzrcrg:c$a$jnneJ,A5gxE@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres';
