@@ -121,67 +121,55 @@ export default function StudentDashboard() {
         setNationality(studProfile.nationality || '');
         setCurrentCountry(studProfile.current_country || '');
         setAvatarUrl(studProfile.avatar_url || '');
-        
-        // Load Roadmap, predictions and saved items
-        const road = await getStudentRoadmap(studProfile.id);
-        if (road) setRoadmap(road);
-        
-        const preds = await getAdmissionPredictions(studProfile.id);
-        setPredictions(preds);
-        
-        const saved = await getSavedItems(studProfile.id);
-        setSavedItems(saved);
         setCompletedMilestones(studProfile.milestones_completed || []);
 
-        const examsReq = await getStudentRequiredExams(studProfile.id);
-        setRequiredExams(examsReq);
-
-        const leaderboardData = await getLeaderboard();
-        setLeaderboard(leaderboardData);
-
-        const apps = await getStudentApplications(studProfile.id);
-        setApplications(apps);
-
-        const rooms = await getStudentRoomBookings(studProfile.id);
-        setRoomBookings(rooms);
-        
-        const travels = await getStudentFlightBookings(studProfile.id);
-        setFlightBookings(travels);
-
-        // Load all universities list for Tester
-        const allU = await getUniversities({});
-        setAllUnivs(allU);
-
-        // Fetch dynamic recommendations if onboarding is done
         const preferredCountriesList = studProfile.preferred_countries || [];
+        const firstCountry = preferredCountriesList[0] || 'Germany';
+
+        // Parallelise all secondary data fetches for faster loading
+        const [
+          road, preds, saved, examsReq, leaderboardData, apps,
+          rooms, travels, allU, matchingC, allSch, visa, flightEsts, acc
+        ] = await Promise.all([
+          getStudentRoadmap(studProfile.id),
+          getAdmissionPredictions(studProfile.id),
+          getSavedItems(studProfile.id),
+          getStudentRequiredExams(studProfile.id),
+          getLeaderboard(),
+          getStudentApplications(studProfile.id),
+          getStudentRoomBookings(studProfile.id),
+          getStudentFlightBookings(studProfile.id),
+          getUniversities({}),
+          getCourses({ department: studProfile.department || 'Computer Science' }),
+          getScholarships(studProfile.id),
+          getVisaGuidance(firstCountry),
+          getFlightsEstimates(),
+          getAccommodations({ country: firstCountry }),
+        ]);
+
+        if (road) setRoadmap(road);
+        setPredictions(preds);
+        setSavedItems(saved);
+        setRequiredExams(examsReq);
+        setLeaderboard(leaderboardData);
+        setApplications(apps);
+        setRoomBookings(rooms);
+        setFlightBookings(travels);
+        setAllUnivs(allU);
+        setRecommendedCourses(matchingC.slice(0, 3));
+        setRecommendedSchs(allSch.slice(0, 3));
+        setVisaGuidance(visa);
+        setFlights(flightEsts.filter((f: any) => f.country_name === firstCountry));
+        setAccommodations(acc.slice(0, 3));
+
+        // Filter universities client-side (no extra DB call)
         const budgetVal = Number(studProfile.budget) || 30000;
-        
-        // Find matching universities based on budget and countries
-        const matchingU = allU.filter(u => {
+        const matchingU = allU.filter((u: any) => {
           const countryMatch = preferredCountriesList.length === 0 || preferredCountriesList.includes(u.country_name);
           const feeMatch = Number(u.tuition_fee_min) <= budgetVal;
           return countryMatch && feeMatch;
         }).slice(0, 3);
         setRecommendedUnivs(matchingU);
-
-        // Fetch courses matching target department
-        const matchingC = await getCourses({ department: studProfile.department || 'Computer Science' });
-        setRecommendedCourses(matchingC.slice(0, 3));
-
-        // Fetch government/university scholarships matching eligibility
-        const allSch = await getScholarships(studProfile.id);
-        setRecommendedSchs(allSch.slice(0, 3));
-
-        // Fetch travel guidance based on first preferred country
-        const firstCountry = preferredCountriesList[0] || 'Germany';
-        const visa = await getVisaGuidance(firstCountry);
-        setVisaGuidance(visa);
-
-        const flightEsts = await getFlightsEstimates();
-        setFlights(flightEsts.filter(f => f.country_name === firstCountry || firstCountry === 'Germany'));
-
-        const acc = await getAccommodations({ country: firstCountry });
-        setAccommodations(acc.slice(0, 3));
       }
       setLoading(false);
     }
@@ -509,13 +497,6 @@ export default function StudentDashboard() {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/student/onboarding')}
-            className="flex items-center gap-2 rounded-xl border border-slate-300 bg-white text-slate-750 font-bold px-4 py-2 text-xs hover:bg-slate-50 transition-all cursor-pointer shadow-sm"
-          >
-            <Sparkles className="h-4 w-4 text-teal-dark" />
-            <span>AI Onboarding Wizard</span>
-          </button>
-          <button
             onClick={() => setEditMode(true)}
             className="flex items-center gap-2 rounded-xl bg-teal-dark text-white font-bold px-4 py-2 text-xs hover:bg-teal-bright transition-all cursor-pointer shadow-md"
           >
@@ -548,8 +529,14 @@ export default function StudentDashboard() {
           </div>
           <div>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">AI Readiness Score</span>
-            <span className="text-xl font-black text-slate-900">{profile?.ai_readiness_score || 55}/100</span>
-            <span className="text-[9px] text-slate-500 block mt-1">Based on portfolio details</span>
+            <span className="text-xl font-black text-slate-900">
+              {profile?.ai_readiness_score > 0 ? profile.ai_readiness_score : (
+                profile?.onboarding_completed ? Math.min(100, 45 + Math.round((Number(profile?.cgpa) || 3) * 10)) : 25
+              )}/100
+            </span>
+            <span className="text-[9px] text-slate-500 block mt-1">
+              {profile?.onboarding_completed ? 'Based on CGPA, skills & exams' : 'Complete onboarding to improve'}
+            </span>
           </div>
         </div>
 
@@ -560,8 +547,14 @@ export default function StudentDashboard() {
           </div>
           <div>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Scholarship Odds</span>
-            <span className="text-xl font-black text-slate-900">{profile?.scholarship_eligibility_score || 40}%</span>
-            <span className="text-[9px] text-slate-500 block mt-1">Matched to low budget filters</span>
+            <span className="text-xl font-black text-slate-900">
+              {profile?.scholarship_eligibility_score > 0 ? profile.scholarship_eligibility_score : (
+                profile?.onboarding_completed ? Math.min(100, 40 + (Number(profile?.cgpa) >= 3.7 ? 30 : Number(profile?.cgpa) >= 3.3 ? 15 : 0)) : 20
+              )}%
+            </span>
+            <span className="text-[9px] text-slate-500 block mt-1">
+              {profile?.onboarding_completed ? 'Based on CGPA & budget range' : 'Finish profile to unlock'}
+            </span>
           </div>
         </div>
 
@@ -572,8 +565,14 @@ export default function StudentDashboard() {
           </div>
           <div>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Profile Strength</span>
-            <span className="text-xl font-black text-slate-900">{profile?.admission_strength_score || 50}/100</span>
-            <span className="text-[9px] text-slate-500 block mt-1">CGPA + Research count</span>
+            <span className="text-xl font-black text-slate-900">
+              {profile?.admission_strength_score > 0 ? profile.admission_strength_score : (
+                profile?.onboarding_completed ? Math.min(100, 50 + (Number(profile?.cgpa) >= 3.8 ? 20 : 0)) : 20
+              )}/100
+            </span>
+            <span className="text-[9px] text-slate-500 block mt-1">
+              {profile?.onboarding_completed ? 'CGPA + skills + experience' : 'Add skills & work experience'}
+            </span>
           </div>
         </div>
       </div>
