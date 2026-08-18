@@ -510,9 +510,9 @@ export default function UniversitiesPage() {
 
                     <div className="flex flex-wrap justify-between items-center gap-2 border-t border-teal-green/15 pt-3 mt-2">
                       <a
-                        href={univ.website}
+                        href={univ.website?.startsWith('http') ? univ.website : `https://${univ.website}`}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noreferrer noopener"
                         className="text-xs text-slate-600 hover:text-slate-800 flex items-center gap-1 transition-colors"
                       >
                         <span>Visit Website</span>
@@ -1087,9 +1087,9 @@ export default function UniversitiesPage() {
               {/* Action buttons */}
               <div className="flex justify-end gap-3 border-t border-slate-100 pt-4 mt-6">
                 <a
-                  href={selectedUnivForGuidelines.website}
+                  href={selectedUnivForGuidelines.website?.startsWith('http') ? selectedUnivForGuidelines.website : `https://${selectedUnivForGuidelines.website}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noreferrer noopener"
                   className="px-4 py-2 border border-slate-350 hover:bg-slate-50 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm no-underline"
                 >
                   <span>Visit Website</span>

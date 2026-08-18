@@ -202,8 +202,10 @@ export default function RecommendationsHub() {
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
+                          max="10"
                           value={cgpa}
-                          onChange={(e) => setCgpa(Number(e.target.value))}
+                          onChange={(e) => setCgpa(Math.max(0, Number(e.target.value)))}
                           required
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                         />
@@ -213,8 +215,10 @@ export default function RecommendationsHub() {
                         <input
                           type="number"
                           step="0.1"
+                          min="0"
+                          max="9"
                           value={ielts}
-                          onChange={(e) => setIelts(Number(e.target.value))}
+                          onChange={(e) => setIelts(Math.max(0, Number(e.target.value)))}
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                           placeholder="e.g. 7.5"
                         />
@@ -223,8 +227,10 @@ export default function RecommendationsHub() {
                         <label className="block font-semibold text-slate-700 mb-1.5">TOEFL Score</label>
                         <input
                           type="number"
+                          min="0"
+                          max="120"
                           value={toefl}
-                          onChange={(e) => setToefl(Number(e.target.value))}
+                          onChange={(e) => setToefl(Math.max(0, Number(e.target.value)))}
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                           placeholder="e.g. 100"
                         />
@@ -246,8 +252,9 @@ export default function RecommendationsHub() {
                         <label className="block font-semibold text-slate-700 mb-1.5">Projects</label>
                         <input
                           type="number"
+                          min="0"
                           value={projects}
-                          onChange={(e) => setProjects(Number(e.target.value))}
+                          onChange={(e) => setProjects(Math.max(0, Number(e.target.value)))}
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                         />
                       </div>
@@ -255,8 +262,9 @@ export default function RecommendationsHub() {
                         <label className="block font-semibold text-slate-700 mb-1.5">Research Papers</label>
                         <input
                           type="number"
+                          min="0"
                           value={researchPapers}
-                          onChange={(e) => setResearchPapers(Number(e.target.value))}
+                          onChange={(e) => setResearchPapers(Math.max(0, Number(e.target.value)))}
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                         />
                       </div>
@@ -267,8 +275,9 @@ export default function RecommendationsHub() {
                         <label className="block font-semibold text-slate-700 mb-1.5">Work Exp (Months)</label>
                         <input
                           type="number"
+                          min="0"
                           value={workExperience}
-                          onChange={(e) => setWorkExperience(Number(e.target.value))}
+                          onChange={(e) => setWorkExperience(Math.max(0, Number(e.target.value)))}
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                         />
                       </div>
@@ -449,8 +458,10 @@ export default function RecommendationsHub() {
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
+                          max="10"
                           value={recCgpa}
-                          onChange={(e) => setRecCgpa(Number(e.target.value))}
+                          onChange={(e) => setRecCgpa(Math.max(0, Number(e.target.value)))}
                           required
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                         />
