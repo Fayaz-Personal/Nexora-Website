@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { 
   Award, Calendar, DollarSign, Star, CheckCircle, ShieldAlert, Loader2, Sparkles, Filter

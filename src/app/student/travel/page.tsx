@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { 
   Plane, Calendar, DollarSign, ListTodo, ShieldCheck, CheckCircle2, Info, Loader2, ArrowRight, UserCheck, ShieldAlert, X, FileText,

@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { 
   Home, MapPin, DollarSign, ShieldAlert, Award, Compass, Loader2, Sparkles, ShieldCheck, CheckCircle2, Star, Clock, Building, Users, X,

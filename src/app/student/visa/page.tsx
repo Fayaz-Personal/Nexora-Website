@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from 'react';
 import { 
   FileCheck, Calendar, DollarSign, Clock, ShieldCheck, CheckCircle2, ChevronRight, Loader2

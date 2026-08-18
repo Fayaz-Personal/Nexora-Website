@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Sparkles, Send, Bot, User, Trash2, ArrowRight, HelpCircle, Info, Database,
