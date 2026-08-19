@@ -435,28 +435,6 @@ export default function StudentDashboard() {
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       
-      {/* 1. Onboarding Check Banner */}
-      {!profile?.onboarding_completed && (
-        <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-teal-dark/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-teal-sunrise" />
-          <div className="space-y-1.5 text-center md:text-left">
-            <h2 className="text-md font-bold text-white flex items-center justify-center md:justify-start gap-2">
-              <Sparkles className="h-4.5 w-4.5 text-teal-bright animate-pulse" />
-              <span>Complete Your AI Onboarding Profile</span>
-            </h2>
-            <p className="text-xs text-slate-400 max-w-xl">
-              Unlock personalized course recommendations, circular match gauges, visa guidance step checklists, and real-time eligibility scores by setting up your academic background.
-            </p>
-          </div>
-          <button
-            onClick={() => router.push('/student/onboarding')}
-            className="px-5 py-2.5 bg-gradient-teal-sunrise text-slate-900 font-extrabold text-xs rounded-xl shadow-md cursor-pointer hover:shadow-lg transition-all transform hover:scale-[1.02] shrink-0"
-          >
-            Start Onboarding (4 Steps)
-          </button>
-        </div>
-      )}
-
       {/* Header Panel */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-200 pb-5 w-full">
         <div className="flex items-center gap-4">

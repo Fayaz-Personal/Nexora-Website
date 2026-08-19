@@ -613,7 +613,7 @@ export default function AdvisorPage() {
                       <div className={`p-4 rounded-2xl text-xs max-w-[82%] shadow-sm leading-relaxed ${
                         isAssistant 
                           ? 'border border-slate-100 text-slate-800 rounded-tl-none bg-slate-50/70 font-semibold' 
-                          : 'bg-gradient-to-r from-teal-650 to-teal-850 text-white font-extrabold rounded-tr-none'
+                          : 'bg-gradient-to-r from-teal-600 to-teal-800 text-white font-extrabold rounded-tr-none'
                       }`}>
                         {isAssistant ? (
                           <div 
