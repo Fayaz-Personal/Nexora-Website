@@ -94,7 +94,7 @@ Guidelines:
     if (!response.ok) {
       const errText = await response.text();
       console.error('Groq API returned error:', errText);
-      return { response: "Sorry, I am having trouble connecting to my AI processing units. Please verify the Groq API key." };
+      return { response: `AI Error (${response.status}): ${errText.substring(0, 200)}` };
     }
 
     const data = await response.json();
