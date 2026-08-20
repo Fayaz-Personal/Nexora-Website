@@ -5,16 +5,11 @@ import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { LogOut, Menu, User, X } from 'lucide-react';
-import { UserSession, logoutUser } from '@/app/actions/auth';
+import { UserSession, logoutUser, getCurrentUser } from '@/app/actions/auth';
 import { getStudentProfile } from '@/app/actions/student';
 import { getUniAdminDetails } from '@/app/actions/uniAdmin';
 
-
-interface NavbarProps {
-  user: UserSession | null;
-}
-
-export default function Navbar({ user }: NavbarProps) {
+export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
   const isHome = pathname === '/';
@@ -22,7 +17,12 @@ export default function Navbar({ user }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [user, setUser] = useState<UserSession | null>(null);
 
+  // Fetch user client-side — keeps layout.tsx static (no cookies in server component)
+  useEffect(() => {
+    getCurrentUser().then(u => setUser(u));
+  }, [pathname]);
 
   useEffect(() => {
     async function fetchProfile() {
