@@ -523,8 +523,9 @@ export default function RecommendationsHub() {
                         <label className="block font-semibold text-slate-700 mb-1.5">Budget Limit ($/yr)</label>
                         <input
                           type="number"
+                          min="0"
                           value={budget}
-                          onChange={(e) => setBudget(Number(e.target.value))}
+                          onChange={(e) => setBudget(Math.max(0, Number(e.target.value)))}
                           required
                           className="w-full bg-white border border-slate-200 rounded-xl p-3 focus:outline-none focus:border-teal-dark"
                         />
