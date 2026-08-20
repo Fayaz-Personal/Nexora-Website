@@ -1606,8 +1606,9 @@ export default function StudentDashboard() {
                   <label className="block text-xs font-semibold text-slate-650 mb-1.5 uppercase">Annual Budget (USD)</label>
                   <input
                     type="number"
+                    min="0"
                     value={budget}
-                    onChange={(e) => setBudget(Number(e.target.value))}
+                    onChange={(e) => setBudget(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-white border border-slate-200 rounded-lg text-slate-800 p-2.5 text-xs focus:outline-none focus:border-teal-dark/50 focus:ring-1 focus:ring-teal-dark shadow-sm"
                     required
                   />

@@ -1144,8 +1144,9 @@ export default function UniAdminDashboard() {
                 <label className="block font-semibold text-slate-700 mb-1.5 uppercase">QS World Ranking</label>
                 <input
                   type="number"
+                  min="0"
                   value={uniRanking}
-                  onChange={(e) => setUniRanking(Number(e.target.value))}
+                  onChange={(e) => setUniRanking(Math.max(0, Number(e.target.value)))}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   required
                 />
@@ -1215,8 +1216,9 @@ export default function UniAdminDashboard() {
                 <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Min Tuition Fee (USD)</label>
                 <input
                   type="number"
+                  min="0"
                   value={uniFeeMin}
-                  onChange={(e) => setUniFeeMin(Number(e.target.value))}
+                  onChange={(e) => setUniFeeMin(Math.max(0, Number(e.target.value)))}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   required
                 />
@@ -1226,8 +1228,9 @@ export default function UniAdminDashboard() {
                 <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Max Tuition Fee (USD)</label>
                 <input
                   type="number"
+                  min="0"
                   value={uniFeeMax}
-                  onChange={(e) => setUniFeeMax(Number(e.target.value))}
+                  onChange={(e) => setUniFeeMax(Math.max(0, Number(e.target.value)))}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   required
                 />
@@ -1237,9 +1240,10 @@ export default function UniAdminDashboard() {
                 <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Acceptance Rate (%)</label>
                 <input
                   type="number"
+                  min="0"
+                  max="100"
                   value={uniAcceptance}
-                  onChange={(e) => setUniAcceptance(Number(e.target.value))}
-                  max={100}
+                  onChange={(e) => setUniAcceptance(Math.max(0, Number(e.target.value)))}
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   required
                 />
@@ -1407,8 +1411,9 @@ export default function UniAdminDashboard() {
                   <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Annual Tuition (USD)</label>
                   <input
                     type="number"
+                    min="0"
                     value={courseFees}
-                    onChange={(e) => setCourseFees(Number(e.target.value))}
+                    onChange={(e) => setCourseFees(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                     required
                   />
@@ -1444,8 +1449,9 @@ export default function UniAdminDashboard() {
                   <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Seats Available</label>
                   <input
                     type="number"
+                    min="0"
                     value={courseSeats}
-                    onChange={(e) => setCourseSeats(Number(e.target.value))}
+                    onChange={(e) => setCourseSeats(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                     required
                   />
@@ -1484,9 +1490,11 @@ export default function UniAdminDashboard() {
                   <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Min IELTS score</label>
                   <input
                     type="number"
+                    min="0"
+                    max="9"
                     step="0.5"
                     value={courseIelts}
-                    onChange={(e) => setCourseIelts(Number(e.target.value))}
+                    onChange={(e) => setCourseIelts(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   />
                 </div>
@@ -1495,8 +1503,9 @@ export default function UniAdminDashboard() {
                   <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Min TOEFL score</label>
                   <input
                     type="number"
+                    min="0"
                     value={courseToefl}
-                    onChange={(e) => setCourseToefl(Number(e.target.value))}
+                    onChange={(e) => setCourseToefl(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   />
                 </div>
@@ -1505,8 +1514,9 @@ export default function UniAdminDashboard() {
                   <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Min GRE score</label>
                   <input
                     type="number"
+                    min="0"
                     value={courseGre}
-                    onChange={(e) => setCourseGre(Number(e.target.value))}
+                    onChange={(e) => setCourseGre(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   />
                 </div>
@@ -1515,9 +1525,11 @@ export default function UniAdminDashboard() {
                   <label className="block font-semibold text-slate-700 mb-1.5 uppercase">Minimum CGPA requirement</label>
                   <input
                     type="number"
+                    min="0"
+                    max="10"
                     step="0.01"
                     value={courseMinCgpa}
-                    onChange={(e) => setCourseMinCgpa(Number(e.target.value))}
+                    onChange={(e) => setCourseMinCgpa(Math.max(0, Number(e.target.value)))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl text-slate-800 p-2.5 focus:bg-white focus:outline-none focus:border-teal-bright transition-all"
                   />
                 </div>

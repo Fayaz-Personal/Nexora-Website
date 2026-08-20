@@ -2,7 +2,7 @@
 
 import { query } from '@/db';
 
-const apiKey = process.env.GROQ_API_KEY;
+// apiKey read inside functions to ensure Vercel runtime env vars are available
 
 export interface FundingProvider {
   id: number;
@@ -44,6 +44,7 @@ export async function getFundingProviders(): Promise<FundingProvider[]> {
 
 export async function getAIFundingRecommendations(profile: StudentLoanProfile): Promise<FundingRecommendation[]> {
   try {
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       throw new Error("Groq API Key is missing. Please add GROQ_API_KEY to your .env.local file.");
     }

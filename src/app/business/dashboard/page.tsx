@@ -2117,8 +2117,9 @@ export default function BusinessDashboard() {
                   <label className="block font-semibold text-slate-600 mb-1.5 uppercase">Monthly Rent (USD)</label>
                   <input
                     type="number"
+                    min="0"
                     value={houseRent}
-                    onChange={(e) => setHouseRent(Number(e.target.value))}
+                    onChange={(e) => setHouseRent(Math.max(0, Number(e.target.value)))}
                     className="w-full glass-input"
                     required
                   />
@@ -2544,8 +2545,9 @@ export default function BusinessDashboard() {
                   <label className="block font-semibold text-slate-600 mb-1.5 uppercase">Visa Application Fee (USD)</label>
                   <input
                     type="number"
+                    min="0"
                     value={visaFee}
-                    onChange={(e) => setVisaFee(Number(e.target.value))}
+                    onChange={(e) => setVisaFee(Math.max(0, Number(e.target.value)))}
                     className="w-full glass-input"
                     required
                   />
@@ -2649,8 +2651,9 @@ export default function BusinessDashboard() {
                   <label className="block font-semibold text-slate-600 mb-1.5 uppercase">Est. Ticket Cost (USD)</label>
                   <input
                     type="number"
+                    min="0"
                     value={flightCost}
-                    onChange={(e) => setFlightCost(Number(e.target.value))}
+                    onChange={(e) => setFlightCost(Math.max(0, Number(e.target.value)))}
                     className="w-full glass-input"
                     required
                   />
@@ -2990,8 +2993,9 @@ export default function BusinessDashboard() {
                     <label className="block font-semibold text-slate-600 mb-1.5 uppercase">Base Fare Cost (USD)</label>
                     <input
                       type="number"
+                      min="0"
                       value={pkgTicketCost}
-                      onChange={(e) => setPkgTicketCost(Number(e.target.value))}
+                      onChange={(e) => setPkgTicketCost(Math.max(0, Number(e.target.value)))}
                       className="w-full bg-white border border-slate-200 rounded-xl p-2.5"
                       required
                     />
