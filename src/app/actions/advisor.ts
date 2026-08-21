@@ -5,32 +5,30 @@ import { getCurrentUser } from './auth';
 
 export async function askAIAdvisor(messages: { role: 'user' | 'assistant'; content: string }[]) {
   try {
-    const user = await getCurrentUser();
     let context = 'No student profile context available.';
     let studentId: number | null = null;
 
-    if (user && user.profileId) {
-      studentId = user.profileId;
-      // Fetch student details
-      const studentRes = await query('SELECT * FROM student_profiles WHERE id = $1', [user.profileId]);
-      if (studentRes.rows.length > 0) {
-        const student = studentRes.rows[0];
-        
-        if (student.onboarding_completed) {
-          // Fetch matching universities
-          const univRes = await query(`
-            SELECT u.name, c.name as country, u.ranking, u.tuition_fee_min
-            FROM universities u
-            JOIN countries c ON u.country_id = c.id
-            ORDER BY u.ranking LIMIT 5
-          `);
-          const universities = univRes.rows.map(r => `- ${r.name} (${r.country}) - Rank: #${r.ranking}, Tuition from $${Number(r.tuition_fee_min).toLocaleString()}/yr`).join('\n');
+    try {
+      const user = await getCurrentUser();
+      if (user && user.profileId) {
+        studentId = user.profileId;
+        const studentRes = await query('SELECT * FROM student_profiles WHERE id = $1', [user.profileId]);
+        if (studentRes.rows.length > 0) {
+          const student = studentRes.rows[0];
+          
+          if (student.onboarding_completed) {
+            const univRes = await query(`
+              SELECT u.name, c.name as country, u.ranking, u.tuition_fee_min
+              FROM universities u
+              JOIN countries c ON u.country_id = c.id
+              ORDER BY u.ranking LIMIT 5
+            `);
+            const universities = univRes.rows.map(r => `- ${r.name} (${r.country}) - Rank: #${r.ranking}, Tuition from $${Number(r.tuition_fee_min).toLocaleString()}/yr`).join('\n');
 
-          // Fetch matching scholarships
-          const schRes = await query('SELECT name, provider, amount FROM scholarships LIMIT 5');
-          const scholarships = schRes.rows.map(r => `- ${r.name} by ${r.provider} (${r.amount})`).join('\n');
+            const schRes = await query('SELECT name, provider, amount FROM scholarships LIMIT 5');
+            const scholarships = schRes.rows.map(r => `- ${r.name} by ${r.provider} (${r.amount})`).join('\n');
 
-          context = `
+            context = `
 Student Profile:
 - Target Degree: ${student.degree}
 - Field/Department: ${student.department}
@@ -46,11 +44,15 @@ ${universities}
 
 Database Matching Scholarships (Top):
 ${scholarships}
-          `;
-        } else {
-          context = 'No student profile context available (student has not completed onboarding yet).';
+            `;
+          } else {
+            context = 'Student has not completed onboarding yet.';
+          }
         }
       }
+    } catch (dbErr) {
+      console.error('DB context fetch failed (non-fatal):', dbErr);
+      // Continue without DB context — Groq still works
     }
 
     const apiKey = process.env.GROQ_API_KEY;
@@ -100,13 +102,17 @@ Guidelines:
     const data = await response.json();
     const assistantMessage = data?.choices?.[0]?.message?.content || "Sorry, I couldn't compute a response right now. Please try again.";
 
-    // Log chat to DB if user is logged in
+    // Log chat to DB if user is logged in (non-fatal)
     if (studentId) {
-      const lastUserMsg = messages[messages.length - 1]?.content || '';
-      await query(
-        'INSERT INTO ai_chat_logs (student_id, query_text, response_text) VALUES ($1, $2, $3)',
-        [studentId, lastUserMsg, assistantMessage]
-      );
+      try {
+        const lastUserMsg = messages[messages.length - 1]?.content || '';
+        await query(
+          'INSERT INTO ai_chat_logs (student_id, query_text, response_text) VALUES ($1, $2, $3)',
+          [studentId, lastUserMsg, assistantMessage]
+        );
+      } catch (logErr) {
+        console.error('Chat log insert failed (non-fatal):', logErr);
+      }
     }
 
     return { response: assistantMessage };

@@ -263,9 +263,9 @@ export default function AdvisorPage() {
       const response = await askAIAdvisor([...messages, userMessage]);
       setMessages(prev => [...prev, { role: 'assistant', content: response.response }]);
       speakText(response.response);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      const fallback = "Sorry, my backend neural pathways are currently blocked. Let me evaluate your database variables shortly.";
+      const fallback = `Error: ${error?.message || String(error)}`;
       setMessages(prev => [...prev, { role: 'assistant', content: fallback }]);
       speakText(fallback);
     } finally {

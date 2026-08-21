@@ -1161,11 +1161,12 @@ export default function AIChatbot() {
           return { ...prev, ep: (prev.ep || 0) + 10 };
         });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to get Nexa chat response:', err);
+      const errMsg = err?.message || String(err) || 'Unknown error';
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: 'Sorry, my neural connection is experiencing delays. Let me check the local database or please try again shortly.' }
+        { role: 'assistant', content: `Error: ${errMsg}` }
       ]);
     } finally {
       setChatLoading(false);
