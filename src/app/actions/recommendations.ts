@@ -151,7 +151,7 @@ ${examRequirements.length > 0 ? `- Course Specific Exam Minimum Scores:\n${examR
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama3-70b-8192',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -361,7 +361,7 @@ Student Preferences & Background:
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama3-70b-8192',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
