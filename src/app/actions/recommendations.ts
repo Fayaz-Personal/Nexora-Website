@@ -82,67 +82,38 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
       LIMIT 10
     `, [targetRank]);
 
-    // Combine and deduplicate
+    // Combine and deduplicate — limit to 8 total to keep prompt size small
     const combined = [...dreamRes.rows, ...moderateRes.rows, ...safeRes.rows];
     const seen = new Set();
     const allUnivs = [];
     for (const u of combined) {
-      if (!seen.has(u.name)) {
+      if (!seen.has(u.name) && allUnivs.length < 8) {
         seen.add(u.name);
         allUnivs.push(u);
       }
     }
 
-    const systemPrompt = `
-You are the Nexora Admission Chance Predictor, an expert university admissions audit system.
-Analyze the student's profile details and target choices below. You MUST audit the student's credentials (CGPA, TOEFL, IELTS, GRE) directly against the target university's general eligibility requirements and course-specific exam minimum scores from the database.
-
-Deduce the probability strictly:
-1. Admission Probability (from 10% to 95%):
-   - Deduct heavily if the student fails to meet the minimum GPA or minimum exam score requirements.
-   - If they meet or exceed the requirements, calculate the probability based on the university's acceptance rate and student's profile strength (projects, work experience, papers).
-2. Eligibility Status (one of "Safe", "Moderate", or "Dream"):
-   - "Safe" if student comfortably exceeds all requirements and has a strong profile.
-   - "Moderate" if they meet requirements but the university has a competitive acceptance rate.
-   - "Dream" if they do not meet some requirements, or if the university is highly competitive (acceptance rate < 10%).
-3. A detailed analysis explanation:
-   - Explicitly cite the university's GPA and test requirements versus the student's actual values (e.g. "Your CGPA of 3.6 exceeds the minimum requirement of 3.0, but your GRE is not provided which is recommended").
-4. Select 2-3 suitable alternative universities from the provided database list categorized under "Safe", "Moderate", and "Dream".
-
-Available Database Universities:
-${allUnivs.map(u => `- ${u.name} (Rank: #${u.ranking}, Acceptance: ${u.acceptance_rate}%, Country: ${u.country_name}, Req: ${u.eligibility_requirements || 'Minimum GPA: 3.0, IELTS 6.5'}).`).join('\n')}
-
-Output your response in STRICT JSON format matching the following schema:
+    const systemPrompt = `You are the Nexora Admission Chance Predictor. Analyze the student profile vs target university requirements. Return STRICT JSON only:
 {
-  "probability": number,
+  "probability": number (10-95),
   "status": "Safe" | "Moderate" | "Dream",
-  "explanation": "string",
-  "safeUniversities": ["string", "string"],
-  "moderateUniversities": ["string", "string"],
-  "dreamUniversities": ["string", "string"]
+  "explanation": "2-3 sentence analysis comparing student credentials to requirements",
+  "safeUniversities": ["name1", "name2"],
+  "moderateUniversities": ["name1", "name2"],
+  "dreamUniversities": ["name1", "name2"]
 }
-`;
 
-    const userPrompt = `
-Student Academic Profile:
-- Current Degree: ${input.degree}
-- Major/Department: ${input.department}
-- CGPA: ${input.cgpa}
-- IELTS Score: ${input.ielts || 'N/A'}
-- TOEFL Score: ${input.toefl || 'N/A'}
-- GRE Score: ${input.greScore || 'N/A'}
-- Number of Projects: ${input.projects}
-- Research Papers: ${input.researchPapers}
-- Work Experience (Months): ${input.workExperience}
+Rules:
+- Safe = prob >= 70%, Moderate = 40-70%, Dream = < 40%
+- Base probability on acceptance rate, CGPA gap, and test scores
+- Pick alternatives ONLY from the provided university list
 
-Target Choice:
-- Target University: ${targetUniv.name} (Rank: #${targetUniv.ranking}, Acceptance Rate: ${targetUniv.acceptance_rate}%)
-- Target Course: ${input.targetCourse}
+Universities list (pick alternatives from here):
+${allUnivs.map(u => `${u.name} | Rank #${u.ranking} | ${u.country_name} | Accept: ${u.acceptance_rate}%`).join('\n')}`;
 
-Target University Admission & Eligibility Requirements (from Database):
-- General Requirements: ${targetUniv.eligibility_requirements || 'Minimum GPA: 3.0 or equivalent, English test required (IELTS 6.5 / TOEFL 90).'}
-${examRequirements.length > 0 ? `- Course Specific Exam Minimum Scores:\n${examRequirements.map(er => `  * ${er.exam_full_name} (${er.exam_name}): Minimum score of ${er.min_score}`).join('\n')}` : ''}
-`;
+    const userPrompt = `Student: ${input.degree} in ${input.department}, CGPA: ${input.cgpa}, IELTS: ${input.ielts || 'N/A'}, TOEFL: ${input.toefl || 'N/A'}, GRE: ${input.greScore || 'N/A'}, Projects: ${input.projects}, Papers: ${input.researchPapers}, Work Exp: ${input.workExperience} months
+Target: ${targetUniv.name} (Rank #${targetUniv.ranking}, Acceptance: ${targetUniv.acceptance_rate}%, Requirements: ${(targetUniv.eligibility_requirements || 'GPA 3.0, IELTS 6.5').substring(0, 200)})
+Course: ${input.targetCourse}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -157,7 +128,7 @@ ${examRequirements.length > 0 ? `- Course Specific Exam Minimum Scores:\n${examR
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.3,
-        response_format: { type: "json_object" }
+        max_tokens: 1024
       })
     });
 
@@ -246,11 +217,11 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
       uniSql += ` WHERE LOWER(c.name) = ANY($1) `;
       uniParams.push(input.preferredCountries.map(c => c.toLowerCase().trim()));
     }
-    uniSql += ` ORDER BY u.ranking ASC LIMIT 30 `;
+    uniSql += ` ORDER BY u.ranking ASC LIMIT 10 `;
     const univsRes = await query(uniSql, uniParams);
     const dbUnivs = univsRes.rows;
 
-    // 2. Fetch DB Courses matching budget, degree type, and country if specified (limit to 35)
+    // 2. Fetch DB Courses matching budget, degree type, and country if specified (limit to 10)
     let courseSql = `
       SELECT c.id, c.name, c.degree_type, c.department, c.fees, c.duration, u.name as university_name
       FROM courses c
@@ -273,70 +244,46 @@ export async function generateAIRecommendations(input: RecommendationInput): Pro
       pIdx++;
     }
 
-    courseSql += ` ORDER BY u.ranking ASC, c.fees ASC LIMIT 35 `;
+    courseSql += ` ORDER BY u.ranking ASC, c.fees ASC LIMIT 10 `;
     let coursesRes = await query(courseSql, courseParams);
     let dbCourses = coursesRes.rows;
 
     if (dbCourses.length === 0 && dbUnivs.length > 0) {
-      // Fallback: Broaden search by removing constraints if no matches are found but universities exist
       const fallbackRes = await query(`
         SELECT c.id, c.name, c.degree_type, c.department, c.fees, c.duration, u.name as university_name
         FROM courses c
         JOIN universities u ON c.university_id = u.id
-        ORDER BY u.ranking ASC LIMIT 35
+        ORDER BY u.ranking ASC LIMIT 10
       `);
       dbCourses = fallbackRes.rows;
     }
 
-    // 3. Fetch DB Scholarships (limit to 20)
-    const scholarshipsRes = await query('SELECT name, provider, amount, eligibility_criteria FROM scholarships LIMIT 20');
+    // 3. Fetch DB Scholarships (limit to 8)
+    const scholarshipsRes = await query('SELECT name, provider, amount, eligibility_criteria FROM scholarships LIMIT 8');
     const dbScholarships = scholarshipsRes.rows;
 
-    // 4. Fetch DB Countries with Visa Details
+    // 4. Fetch DB Countries (limit to preferred ones only)
     const countriesRes = await query(`
-      SELECT c.name, c.visa_info, c.average_living_cost, c.currency, v.requirements, v.timeline, v.fee
+      SELECT c.name, c.average_living_cost, c.currency, v.fee
       FROM countries c
       LEFT JOIN visas v ON v.country_id = c.id
+      LIMIT 10
     `);
     const dbCountries = countriesRes.rows;
 
-    const systemPrompt = `
-You are the Nexora AI Higher Studies Recommendation Engine.
-Match the student's background against the local database context of Universities, Courses, and Scholarships.
-Return highly personalized recommendations.
-
-CRITICAL RULE: You MUST ONLY recommend universities, courses, scholarships, and countries that are explicitly listed in the "Context Catalog from DB" below. You are strictly FORBIDDEN from suggesting or hallucinating any school, course, scholarship, or country not present in these lists.
-- If the "Universities" list is empty, return an empty array [] for "universities" and "courses". Do not suggest any universities.
-- If the "Courses" list is empty, return an empty array [] for "courses".
-- If the "Scholarships" list is empty, return an empty array [] for "scholarships".
-- If the "Countries & Visas" list is empty, return an empty array [] for "countries".
-- Do not mention or recommend standard institutions like MIT, Stanford, TUM, or IITs unless they are explicitly present in the catalogs below.
-
-Context Catalog from DB:
---- Universities ---
-${dbUnivs.map(u => `- ${u.name} (Rank: #${u.ranking}, Country: ${u.country_name}, Requirements: ${u.eligibility_requirements || 'Minimum GPA: 3.0, IELTS 6.5'}).`).join('\n') || '(No universities in database)'}
-
---- Courses ---
-${dbCourses.map(c => `- ${c.name} (${c.degree_type}) at ${c.university_name} (Fees: $${Number(c.fees).toLocaleString()}/yr, Duration: ${c.duration}, Dept: ${c.department})`).join('\n') || '(No courses in database)'}
-
---- Scholarships ---
-${dbScholarships.map(s => `- ${s.name} by ${s.provider} (Amount: ${s.amount}, Criteria: ${s.eligibility_criteria})`).join('\n') || '(No scholarships in database)'}
-
---- Countries & Visas ---
-${dbCountries.map(c => `- ${c.name}: Requirements: ${c.requirements || c.visa_info || 'N/A'}, Timeline: ${c.timeline || 'N/A'}, Fee: $${c.fee || 'N/A'}, Avg Cost: $${Number(c.average_living_cost).toLocaleString()}/month (${c.currency})`).join('\n') || '(No countries in database)'}
-
-Return your response in STRICT JSON format matching the following schema:
+    const systemPrompt = `You are the Nexora AI Recommendation Engine. Match student profile to DB data. Return STRICT JSON only:
 {
-  "universities": [
-    { "name": "string", "ranking": number, "country": "string", "reason": "string" }
-  ],
-  "courses": [
-    { "name": "string", "university": "string", "fees": "string", "duration": "string", "matchReason": "string" }
-  ],
-  "scholarships": [
-    { "name": "string", "provider": "string", "amount": "string", "criteria": "string" }
-  ],
-  "countries": [
+  "universities": [{"name":"string","ranking":0,"country":"string","reason":"string"}],
+  "courses": [{"name":"string","university":"string","fees":"string","duration":"string","matchReason":"string"}],
+  "scholarships": [{"name":"string","provider":"string","amount":"string","criteria":"string"}],
+  "countries": [{"name":"string","visaInfo":"string","averageCost":"string"}]
+}
+ONLY use data from these lists. Max 3 items per category.
+
+Universities: ${dbUnivs.map(u => `${u.name}|#${u.ranking}|${u.country_name}`).join('; ') || 'none'}
+Courses: ${dbCourses.map(c => `${c.name}|${c.degree_type}|${c.university_name}|$${Number(c.fees).toLocaleString()}/yr|${c.duration}`).join('; ') || 'none'}
+Scholarships: ${dbScholarships.map(s => `${s.name}|${s.provider}|${s.amount}`).join('; ') || 'none'}
+Countries: ${dbCountries.map(c => `${c.name}|$${Number(c.average_living_cost).toLocaleString()}/mo`).join('; ') || 'none'}`;
     { "name": "string", "visaInfo": "string", "averageCost": "string" }
   ]
 }
@@ -367,7 +314,7 @@ Student Preferences & Background:
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.1,
-        response_format: { type: "json_object" }
+        max_tokens: 1024
       })
     });
 
