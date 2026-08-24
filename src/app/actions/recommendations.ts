@@ -36,8 +36,8 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
       throw new Error("Groq API Key is missing. Please add GROQ_API_KEY to your .env.local file.");
     }
 
-    // 1. Fetch Target University Details
-    const univRes = await query('SELECT * FROM universities WHERE id = $1', [input.targetUnivId]);
+    // Fetch Target University Details (only needed fields)
+    const univRes = await query('SELECT id, name, ranking, acceptance_rate, eligibility_requirements FROM universities WHERE id = $1', [input.targetUnivId]);
     if (univRes.rows.length === 0) {
       throw new Error('Target university not found in database.');
     }
@@ -57,29 +57,29 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
     const targetRank = targetUniv.ranking || 500;
 
     const dreamRes = await query(`
-      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate, u.eligibility_requirements
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate
       FROM universities u
       JOIN countries c ON u.country_id = c.id
       WHERE u.ranking < $1
       ORDER BY u.ranking DESC
-      LIMIT 10
+      LIMIT 5
     `, [targetRank]);
 
     const moderateRes = await query(`
-      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate, u.eligibility_requirements
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate
       FROM universities u
       JOIN countries c ON u.country_id = c.id
       ORDER BY ABS(u.ranking - $1) ASC
-      LIMIT 10
+      LIMIT 5
     `, [targetRank]);
 
     const safeRes = await query(`
-      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate, u.eligibility_requirements
+      SELECT u.name, c.name as country_name, u.ranking, u.acceptance_rate
       FROM universities u
       JOIN countries c ON u.country_id = c.id
       WHERE u.ranking > $1
       ORDER BY u.ranking ASC
-      LIMIT 10
+      LIMIT 5
     `, [targetRank]);
 
     // Combine and deduplicate — limit to 8 total to keep prompt size small
@@ -93,27 +93,12 @@ export async function predictAdmissionChance(input: PredictChanceInput): Promise
       }
     }
 
-    const systemPrompt = `You are the Nexora Admission Chance Predictor. Analyze the student profile vs target university requirements. Return STRICT JSON only:
-{
-  "probability": number (10-95),
-  "status": "Safe" | "Moderate" | "Dream",
-  "explanation": "2-3 sentence analysis comparing student credentials to requirements",
-  "safeUniversities": ["name1", "name2"],
-  "moderateUniversities": ["name1", "name2"],
-  "dreamUniversities": ["name1", "name2"]
-}
+    const systemPrompt = `You are the Nexora Admission Chance Predictor. Analyze the student profile vs target university. Return STRICT JSON only:
+{"probability":number,"status":"Safe|Moderate|Dream","explanation":"2-3 sentences","safeUniversities":["name1","name2"],"moderateUniversities":["name1"],"dreamUniversities":["name1"]}
+Rules: Safe=prob>=70%, Moderate=40-70%, Dream<40%. Base on acceptance rate and CGPA gap. Pick alternatives ONLY from: ${allUnivs.map(u => `${u.name}(#${u.ranking},${u.country_name})`).join(', ')}`;
 
-Rules:
-- Safe = prob >= 70%, Moderate = 40-70%, Dream = < 40%
-- Base probability on acceptance rate, CGPA gap, and test scores
-- Pick alternatives ONLY from the provided university list
-
-Universities list (pick alternatives from here):
-${allUnivs.map(u => `${u.name} | Rank #${u.ranking} | ${u.country_name} | Accept: ${u.acceptance_rate}%`).join('\n')}`;
-
-    const userPrompt = `Student: ${input.degree} in ${input.department}, CGPA: ${input.cgpa}, IELTS: ${input.ielts || 'N/A'}, TOEFL: ${input.toefl || 'N/A'}, GRE: ${input.greScore || 'N/A'}, Projects: ${input.projects}, Papers: ${input.researchPapers}, Work Exp: ${input.workExperience} months
-Target: ${targetUniv.name} (Rank #${targetUniv.ranking}, Acceptance: ${targetUniv.acceptance_rate}%, Requirements: ${(targetUniv.eligibility_requirements || 'GPA 3.0, IELTS 6.5').substring(0, 200)})
-Course: ${input.targetCourse}`;
+    const userPrompt = `Student: ${input.degree} ${input.department}, CGPA:${input.cgpa}, IELTS:${input.ielts||'N/A'}, TOEFL:${input.toefl||'N/A'}, GRE:${input.greScore||'N/A'}, Projects:${input.projects}, Papers:${input.researchPapers}, WorkExp:${input.workExperience}mo, Course:${input.targetCourse}
+Target: ${targetUniv.name} Rank#${targetUniv.ranking} Acceptance:${targetUniv.acceptance_rate}% Reqs:${(targetUniv.eligibility_requirements||'GPA 3.0, IELTS 6.5').substring(0,200)}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
