@@ -284,22 +284,8 @@ Universities: ${dbUnivs.map(u => `${u.name}|#${u.ranking}|${u.country_name}`).jo
 Courses: ${dbCourses.map(c => `${c.name}|${c.degree_type}|${c.university_name}|$${Number(c.fees).toLocaleString()}/yr|${c.duration}`).join('; ') || 'none'}
 Scholarships: ${dbScholarships.map(s => `${s.name}|${s.provider}|${s.amount}`).join('; ') || 'none'}
 Countries: ${dbCountries.map(c => `${c.name}|$${Number(c.average_living_cost).toLocaleString()}/mo`).join('; ') || 'none'}`;
-    { "name": "string", "visaInfo": "string", "averageCost": "string" }
-  ]
-}
-`;
 
-    const userPrompt = `
-Student Preferences & Background:
-- Academic Background: ${input.academicBackground}
-- CGPA: ${input.cgpa}
-- Skills: ${input.skills.join(', ') || 'None listed'}
-- Interests: ${input.interests.join(', ') || 'None listed'}
-- Career Goals: ${input.careerGoals.join(', ') || 'None listed'}
-- Budget Limit: $${input.budget.toLocaleString()}/year
-- Preferred Countries: ${input.preferredCountries.join(', ') || 'Any'}
-- Target Degree Type: ${input.preferredDegree}
-`;
+    const userPrompt = `Student: ${input.academicBackground}, CGPA: ${input.cgpa}, Skills: ${input.skills.join(', ')}, Interests: ${input.interests.join(', ')}, Goals: ${input.careerGoals.join(', ')}, Budget: $${input.budget.toLocaleString()}/yr, Countries: ${input.preferredCountries.join(', ')}, Degree: ${input.preferredDegree}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
