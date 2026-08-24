@@ -97,7 +97,7 @@ Student Profile Details:
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        model: 'groq/compound',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
